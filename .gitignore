@@ -1,0 +1,5 @@
+# Exclude dependencies
+node_modules/
+
+# Exclude environment variables containing secret keys
+.env
