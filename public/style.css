@@ -1170,6 +1170,41 @@ body {
   transform: scale(0.96);
 }
 
+/* Card Drag and Drop Insertion Indicators */
+.anime-card.drop-before {
+  position: relative;
+}
+.anime-card.drop-before::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -6px;
+  bottom: -2px;
+  width: 5px;
+  background: #6366f1;
+  border-radius: 4px;
+  box-shadow: 0 0 12px #6366f1, 0 0 4px #a855f7;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.anime-card.drop-after {
+  position: relative;
+}
+.anime-card.drop-after::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  bottom: -2px;
+  width: 5px;
+  background: #6366f1;
+  border-radius: 4px;
+  box-shadow: 0 0 12px #6366f1, 0 0 4px #a855f7;
+  z-index: 30;
+  pointer-events: none;
+}
+
 /* Copy hint badge on poster */
 .copy-hover-badge {
   position: absolute;

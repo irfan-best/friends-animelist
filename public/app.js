@@ -647,6 +647,14 @@ function closeUnwatchedSearch() {
   renderUnwatchedView();
 }
 
+function toggleUnwatchedSearchScope() {
+  state.unwatchedSearchScope = state.unwatchedSearchScope === 'global' ? 'unwatched' : 'global';
+  updateUnwatchedSearchBadge();
+  const input = document.getElementById('unwatched-search');
+  if (input) input.focus();
+  renderUnwatchedView();
+}
+
 window.openWatchlistSearch = openWatchlistSearch;
 window.closeWatchlistSearch = closeWatchlistSearch;
 window.openUnwatchedSearch = openUnwatchedSearch;
@@ -1416,15 +1424,16 @@ window.addEventListener('resize', triggerGridRowAlignment);
 function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, categoryName = null, isAllView = false) {
   const card = document.createElement('div');
   card.className = 'anime-card';
-  card.setAttribute('draggable', isAllView ? 'false' : 'true');
+  card.setAttribute('draggable', 'true');
   card.setAttribute('data-anime-title', title);
   card.setAttribute('data-category-id', categoryId);
 
-  // Drag listeners (only in single category view to avoid ambiguous cross-category reordering)
-  if (!isAllView) {
-    card.addEventListener('dragstart', (e) => handleDragStart(e, title, categoryId));
-    card.addEventListener('dragend', handleDragEnd);
-  }
+  // Drag and drop listeners for card reordering
+  card.addEventListener('dragstart', (e) => handleDragStart(e, title, categoryId));
+  card.addEventListener('dragend', handleDragEnd);
+  card.addEventListener('dragover', (e) => handleCardDragOver(e, card));
+  card.addEventListener('dragleave', (e) => handleCardDragLeave(e, card));
+  card.addEventListener('drop', (e) => handleCardDrop(e, title, categoryId, card));
 
   // Click listener for copy or selection (ignoring buttons and fire icon badge)
   card.addEventListener('click', (e) => {
@@ -1464,13 +1473,20 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
       ` : ''}
       <div class="card-actions">
         ${!isAllView ? `
-          <button class="btn btn-icon" title="Move up in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', ${index}, -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
+          <button class="btn btn-icon" title="Move up in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeAttr(title)}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
             <i class="fa-solid fa-arrow-up"></i>
           </button>
-          <button class="btn btn-icon" title="Move down in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', ${index}, 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
+          <button class="btn btn-icon" title="Move down in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeAttr(title)}', 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
             <i class="fa-solid fa-arrow-down"></i>
           </button>
-        ` : ''}
+        ` : `
+          <button class="btn btn-icon" title="Move up in overall order" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
+            <i class="fa-solid fa-arrow-up"></i>
+          </button>
+          <button class="btn btn-icon" title="Move down in overall order" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
+            <i class="fa-solid fa-arrow-down"></i>
+          </button>
+        `}
         <button class="btn btn-icon" title="Move to another category" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeAttr(title)}', '${categoryId}')">
           <i class="fa-solid fa-arrows-split-up-and-left"></i>
         </button>
@@ -1485,7 +1501,7 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
 }
 
 // ==========================================
-// DRAG AND DROP HANDLERS
+// DRAG AND DROP HANDLERS FOR ANIME CARDS
 // ==========================================
 function handleDragStart(e, animeTitle, sourceCatId) {
   if (state.isSelectionMode) {
@@ -1495,13 +1511,158 @@ function handleDragStart(e, animeTitle, sourceCatId) {
   state.draggedAnime = animeTitle;
   state.draggedSourceCatId = sourceCatId;
   e.dataTransfer.setData('text/plain', animeTitle);
+  e.dataTransfer.setData('sourceCatId', sourceCatId || '');
   e.dataTransfer.effectAllowed = 'move';
   e.currentTarget.classList.add('dragging');
 }
 
 function handleDragEnd(e) {
-  e.currentTarget.classList.remove('dragging');
+  if (e.currentTarget) e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.anime-card').forEach(c => {
+    c.classList.remove('drop-before');
+    c.classList.remove('drop-after');
+    c.classList.remove('dragging');
+  });
   document.querySelectorAll('.category-body').forEach(b => b.classList.remove('drop-target-active'));
+  state.draggedAnime = null;
+  state.draggedSourceCatId = null;
+}
+
+function handleCardDragOver(e, card) {
+  if (state.draggedCategoryId) return;
+  if (!state.draggedAnime) return;
+  const targetTitle = card.getAttribute('data-anime-title');
+  if (!targetTitle || targetTitle.toLowerCase().trim() === state.draggedAnime.toLowerCase().trim()) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'move';
+
+  const rect = card.getBoundingClientRect();
+  const isAfter = (e.clientX - rect.left) > (rect.width / 2);
+
+  if (isAfter) {
+    card.classList.remove('drop-before');
+    card.classList.add('drop-after');
+  } else {
+    card.classList.remove('drop-after');
+    card.classList.add('drop-before');
+  }
+}
+
+function handleCardDragLeave(e, card) {
+  card.classList.remove('drop-before');
+  card.classList.remove('drop-after');
+}
+
+async function handleCardDrop(e, targetTitle, targetCatId, card) {
+  if (state.draggedCategoryId) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  document.querySelectorAll('.anime-card').forEach(c => {
+    c.classList.remove('drop-before');
+    c.classList.remove('drop-after');
+  });
+
+  const sourceTitle = state.draggedAnime || e.dataTransfer.getData('text/plain');
+  const sourceCatId = state.draggedSourceCatId || e.dataTransfer.getData('sourceCatId');
+  if (!sourceTitle || !targetTitle) return;
+  if (sourceTitle.toLowerCase().trim() === targetTitle.toLowerCase().trim()) return;
+
+  // If in "All" view with active automatic sort, switch to default category order
+  if (state.watchlistAllSort && state.watchlistAllSort !== 'default') {
+    state.watchlistAllSort = 'default';
+    try {
+      localStorage.setItem('anix_watchlist_all_sort', 'default');
+      const sortSelect = document.getElementById('watchlist-all-sort');
+      if (sortSelect) sortSelect.value = 'default';
+    } catch (err) {}
+  }
+
+  const rect = card.getBoundingClientRect();
+  const isAfter = (e.clientX - rect.left) > (rect.width / 2);
+
+  const cleanSource = sourceTitle.trim();
+  const cleanTarget = targetTitle.trim();
+
+  const sourceCat = state.userWatchlist.categories.find(c => c._id === sourceCatId);
+  const targetCat = state.userWatchlist.categories.find(c => c._id === targetCatId);
+  if (!targetCat) return;
+
+  // Case 1: Reordering within the SAME category
+  if (sourceCatId === targetCatId) {
+    const list = [...(targetCat.animes || [])];
+    const oldIdx = list.findIndex(t => t.toLowerCase().trim() === cleanSource.toLowerCase());
+    if (oldIdx === -1) return;
+    list.splice(oldIdx, 1);
+
+    const targetIdx = list.findIndex(t => t.toLowerCase().trim() === cleanTarget.toLowerCase());
+    const insertIdx = targetIdx === -1 ? list.length : (isAfter ? targetIdx + 1 : targetIdx);
+    list.splice(insertIdx, 0, cleanSource);
+
+    targetCat.animes = list;
+    renderWatchlistView();
+    updateSelectionUI();
+
+    try {
+      const res = await apiRequest('/api/watchlist/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({
+          categoryId: targetCatId,
+          animes: list
+        })
+      });
+      if (res && res.watchlist) {
+        state.userWatchlist = res.watchlist;
+      }
+      await refreshGlobalStats();
+      showToast(`Reordered "${cleanSource}" in ${targetCat.categoryName}!`, 'success', 1500);
+    } catch (err) {
+      console.error('Error reordering anime:', err);
+      showToast(err.message || 'Failed to save anime order.', 'error');
+      renderWatchlistView();
+    }
+    return;
+  }
+
+  // Case 2: Moving across DIFFERENT categories to a specific position
+  if (sourceCat) {
+    sourceCat.animes = (sourceCat.animes || []).filter(t => t.toLowerCase().trim() !== cleanSource.toLowerCase());
+  }
+
+  const targetList = (targetCat.animes || []).filter(t => t.toLowerCase().trim() !== cleanSource.toLowerCase());
+  const targetIdx = targetList.findIndex(t => t.toLowerCase().trim() === cleanTarget.toLowerCase());
+  const insertIdx = targetIdx === -1 ? targetList.length : (isAfter ? targetIdx + 1 : targetIdx);
+  targetList.splice(insertIdx, 0, cleanSource);
+  targetCat.animes = targetList;
+
+  renderWatchlistView();
+  updateSelectionUI();
+
+  try {
+    const res = await apiRequest('/api/watchlist/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({
+        moveAnime: {
+          animeTitle: cleanSource,
+          sourceCategoryId: sourceCatId,
+          targetCategoryId: targetCatId,
+          targetIndex: insertIdx
+        }
+      })
+    });
+    if (res && res.watchlist) {
+      state.userWatchlist = res.watchlist;
+    }
+    await refreshGlobalStats();
+    updateHeaderBadges();
+    showToast(`Moved "${cleanSource}" to ${targetCat.categoryName}!`, 'success', 1500);
+  } catch (err) {
+    console.error('Error moving anime across categories:', err);
+    showToast(err.message || 'Failed to move anime.', 'error');
+    renderWatchlistView();
+  }
 }
 
 function handleDragOver(e) {
@@ -1526,7 +1687,7 @@ async function handleDrop(e, targetCatId) {
   const animeTitle = state.draggedAnime || e.dataTransfer.getData('text/plain');
   if (!animeTitle) return;
 
-  const sourceCatId = state.draggedSourceCatId;
+  const sourceCatId = state.draggedSourceCatId || e.dataTransfer.getData('sourceCatId');
   if (sourceCatId === targetCatId) return;
 
   try {
@@ -1562,9 +1723,10 @@ function isTitleSelected(title) {
 }
 
 /**
- * Batch reorders selected anime within category:
+ * Batch reorders selected anime within category or across all categories:
  * - Above move: inserts all selected images before first most selected image's previous image
  * - Down move: inserts all selected images after the last most selected image's next image
+ * Saves the updated order directly to Mongo cloud via PUT /api/watchlist/reorder.
  */
 async function batchReorderSelectedAnime(direction, targetCategoryId = null) {
   if (!state.userWatchlist || !state.userWatchlist.categories) return;
@@ -1573,38 +1735,123 @@ async function batchReorderSelectedAnime(direction, targetCategoryId = null) {
     return;
   }
 
-  // Determine affected categories
-  let targetCategories = [];
-  if (targetCategoryId) {
-    const found = state.userWatchlist.categories.find(c => c._id === targetCategoryId);
-    if (found) targetCategories = [found];
-  } else if (state.activeCategoryFilter && state.activeCategoryFilter !== 'all') {
-    const found = state.userWatchlist.categories.find(c =>
-      c._id === state.activeCategoryFilter ||
-      c.categoryName.toLowerCase() === String(state.activeCategoryFilter).toLowerCase()
-    );
-    if (found) targetCategories = [found];
+  // If automatic sort (like A-Z or Popularity) was active, reset to default category order
+  if (state.watchlistAllSort && state.watchlistAllSort !== 'default') {
+    state.watchlistAllSort = 'default';
+    try {
+      localStorage.setItem('anix_watchlist_all_sort', 'default');
+      const sortSelect = document.getElementById('watchlist-all-sort');
+      if (sortSelect) sortSelect.value = 'default';
+    } catch (e) {}
   }
 
-  if (targetCategories.length === 0) {
-    // Find all categories containing at least one selected anime
-    targetCategories = state.userWatchlist.categories.filter(cat =>
-      cat.animes && cat.animes.some(t => isTitleSelected(t))
-    );
-  }
-
-  if (targetCategories.length === 0) {
-    showToast('No selected anime found in your watchlist categories.', 'info');
-    return;
-  }
+  const isAllView = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+  const sortedCats = [...state.userWatchlist.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
 
   let anyMoved = false;
-  let blockedReason = null;
-  const modifiedCategories = [];
 
-  for (const category of targetCategories) {
-    if (!category.animes || category.animes.length === 0) continue;
+  if (isAllView && !targetCategoryId) {
+    // -----------------------------------------------------------
+    // 1. ALL CATEGORIES VIEW: Reorder across continuous global list
+    // -----------------------------------------------------------
+    const allList = [];
+    sortedCats.forEach(cat => {
+      (cat.animes || []).forEach(title => {
+        allList.push({ title, catId: cat._id });
+      });
+    });
 
+    if (allList.length === 0) return;
+
+    const selectedIndices = [];
+    allList.forEach((item, idx) => {
+      if (isTitleSelected(item.title)) {
+        selectedIndices.push(idx);
+      }
+    });
+
+    if (selectedIndices.length === 0) {
+      showToast('No selected anime found in your watchlist.', 'info');
+      return;
+    }
+
+    const selectedTitles = selectedIndices.map(i => allList[i].title);
+    const selectedTitlesLower = new Set(selectedTitles.map(t => t.toLowerCase().trim()));
+
+    if (direction === -1) {
+      // Move Above
+      const firstIdx = selectedIndices[0];
+      if (firstIdx === 0) {
+        showToast('Selected anime is already at the very top of your watchlist.', 'info');
+        return;
+      }
+
+      const targetItem = allList[firstIdx - 1];
+
+      // Remove selected items from all categories
+      sortedCats.forEach(c => {
+        c.animes = (c.animes || []).filter(t => !selectedTitlesLower.has(t.toLowerCase().trim()));
+      });
+
+      // Target category where the anime right above lives
+      const targetCat = sortedCats.find(c => c._id.toString() === targetItem.catId.toString());
+      if (!targetCat) return;
+
+      let targetIdx = targetCat.animes.findIndex(t => t.toLowerCase().trim() === targetItem.title.toLowerCase().trim());
+      if (targetIdx === -1) targetIdx = 0;
+
+      // Insert selected items right before the target item
+      targetCat.animes.splice(targetIdx, 0, ...selectedTitles);
+      anyMoved = true;
+    } else if (direction === 1) {
+      // Move Below
+      const lastIdx = selectedIndices[selectedIndices.length - 1];
+      if (lastIdx === allList.length - 1) {
+        showToast('Selected anime is already at the very bottom of your watchlist.', 'info');
+        return;
+      }
+
+      const targetItem = allList[lastIdx + 1];
+
+      // Remove selected items from all categories
+      sortedCats.forEach(c => {
+        c.animes = (c.animes || []).filter(t => !selectedTitlesLower.has(t.toLowerCase().trim()));
+      });
+
+      // Target category where the anime right below lives
+      const targetCat = sortedCats.find(c => c._id.toString() === targetItem.catId.toString());
+      if (!targetCat) return;
+
+      let targetIdx = targetCat.animes.findIndex(t => t.toLowerCase().trim() === targetItem.title.toLowerCase().trim());
+      if (targetIdx === -1) targetIdx = targetCat.animes.length - 1;
+
+      // Insert selected items right after the target item
+      targetCat.animes.splice(targetIdx + 1, 0, ...selectedTitles);
+      anyMoved = true;
+    }
+  } else {
+    // -----------------------------------------------------------
+    // 2. SINGLE CATEGORY VIEW: Reorder within target category
+    // -----------------------------------------------------------
+    let targetCategory = null;
+    if (targetCategoryId) {
+      targetCategory = sortedCats.find(c => c._id === targetCategoryId);
+    } else if (state.activeCategoryFilter && state.activeCategoryFilter !== 'all') {
+      targetCategory = sortedCats.find(c =>
+        c._id === state.activeCategoryFilter ||
+        c.categoryName.toLowerCase() === String(state.activeCategoryFilter).toLowerCase()
+      );
+    }
+    if (!targetCategory) {
+      targetCategory = sortedCats.find(c => c.animes && c.animes.some(t => isTitleSelected(t)));
+    }
+
+    if (!targetCategory || !targetCategory.animes || targetCategory.animes.length === 0) {
+      showToast('No selected anime found in this category.', 'info');
+      return;
+    }
+
+    const category = targetCategory;
     const selectedIndices = [];
     category.animes.forEach((title, idx) => {
       if (isTitleSelected(title)) {
@@ -1612,97 +1859,96 @@ async function batchReorderSelectedAnime(direction, targetCategoryId = null) {
       }
     });
 
-    if (selectedIndices.length === 0) continue;
+    if (selectedIndices.length === 0) {
+      showToast('No selected anime in this category.', 'info');
+      return;
+    }
+
+    const selectedTitles = selectedIndices.map(i => category.animes[i]);
+    const selectedTitlesLower = new Set(selectedTitles.map(t => t.toLowerCase().trim()));
 
     if (direction === -1) {
-      // Above move: insert all selected images before first most selected image's previous image
       const firstIdx = selectedIndices[0];
       if (firstIdx === 0) {
-        blockedReason = `Selected anime in "${category.categoryName}" is already at the top.`;
-        continue;
+        showToast(`Selected anime is already at the top of "${category.categoryName}".`, 'info');
+        return;
       }
       const prevImage = category.animes[firstIdx - 1];
-      const selectedItems = selectedIndices.map(i => category.animes[i]);
-      const remaining = category.animes.filter((_, idx) => !selectedIndices.includes(idx));
-      const prevTargetIdx = remaining.indexOf(prevImage);
-      if (prevTargetIdx === -1) continue;
+      category.animes = category.animes.filter(t => !selectedTitlesLower.has(t.toLowerCase().trim()));
+      const prevTargetIdx = category.animes.indexOf(prevImage);
+      if (prevTargetIdx === -1) return;
 
-      remaining.splice(prevTargetIdx, 0, ...selectedItems);
-      category.animes = remaining;
+      category.animes.splice(prevTargetIdx, 0, ...selectedTitles);
       anyMoved = true;
-      modifiedCategories.push(category);
     } else if (direction === 1) {
-      // Down move: insert all selected images after the last most selected image's next image
       const lastIdx = selectedIndices[selectedIndices.length - 1];
       if (lastIdx === category.animes.length - 1) {
-        blockedReason = `Selected anime in "${category.categoryName}" is already at the bottom.`;
-        continue;
+        showToast(`Selected anime is already at the bottom of "${category.categoryName}".`, 'info');
+        return;
       }
       const nextImage = category.animes[lastIdx + 1];
-      const selectedItems = selectedIndices.map(i => category.animes[i]);
-      const remaining = category.animes.filter((_, idx) => !selectedIndices.includes(idx));
-      const nextTargetIdx = remaining.indexOf(nextImage);
-      if (nextTargetIdx === -1) continue;
+      category.animes = category.animes.filter(t => !selectedTitlesLower.has(t.toLowerCase().trim()));
+      const nextTargetIdx = category.animes.indexOf(nextImage);
+      if (nextTargetIdx === -1) return;
 
-      remaining.splice(nextTargetIdx + 1, 0, ...selectedItems);
-      category.animes = remaining;
+      category.animes.splice(nextTargetIdx + 1, 0, ...selectedTitles);
       anyMoved = true;
-      modifiedCategories.push(category);
     }
   }
 
-  if (!anyMoved) {
-    if (blockedReason) {
-      showToast(blockedReason, 'info');
-    }
-    return;
-  }
+  if (!anyMoved) return;
 
-  // Update UI immediately (optimistic update)
+  // Immediate optimistic update in UI
   renderWatchlistView();
   updateSelectionUI();
 
-  // Save changes to backend
+  // Save changes directly to Mongo cloud
   try {
-    if (modifiedCategories.length === 1) {
-      const cat = modifiedCategories[0];
-      const res = await apiRequest('/api/watchlist/reorder', {
-        method: 'PUT',
-        body: JSON.stringify({
-          categoryId: cat._id,
-          animes: cat.animes
-        })
-      });
-      state.userWatchlist = res.watchlist;
-    } else {
-      const res = await apiRequest('/api/watchlist/reorder', {
-        method: 'PUT',
-        body: JSON.stringify({
-          categories: state.userWatchlist.categories
-        })
-      });
+    const categoriesPayload = sortedCats.map((cat, idx) => ({
+      _id: cat._id,
+      categoryName: cat.categoryName,
+      order: typeof cat.order === 'number' ? cat.order : idx,
+      animes: Array.isArray(cat.animes) ? [...cat.animes] : []
+    }));
+
+    const res = await apiRequest('/api/watchlist/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({
+        categories: categoriesPayload
+      })
+    });
+    if (res && res.watchlist) {
       state.userWatchlist = res.watchlist;
     }
     await refreshGlobalStats();
-    showToast(direction === -1 ? 'Moved selected anime above!' : 'Moved selected anime below!', 'success', 1500);
+    updateHeaderBadges();
+    renderWatchlistView();
+    updateSelectionUI();
+    showToast(direction === -1 ? 'Moved selected anime above and saved to cloud!' : 'Moved selected anime below and saved to cloud!', 'success', 2000);
   } catch (err) {
-    console.error('Error reordering selected anime:', err);
-    showToast(err.message || 'Failed to reorder anime.', 'error');
+    console.error('Error saving anime order to cloud:', err);
+    showToast(err.message || 'Failed to save order to cloud.', 'error');
     renderWatchlistView();
   }
 }
 window.batchReorderSelectedAnime = batchReorderSelectedAnime;
 
 // Reordering Anime within a category (Up / Down)
-async function reorderAnimeInCat(categoryId, currentIndex, direction) {
+async function reorderAnimeInCat(categoryId, animeTitleOrIndex, direction) {
+  if (!state.userWatchlist || !state.userWatchlist.categories) return;
   const category = state.userWatchlist.categories.find(c => c._id === categoryId);
   if (!category || !category.animes) return;
 
-  const clickedTitle = category.animes[currentIndex];
+  let clickedTitle = typeof animeTitleOrIndex === 'string' ? animeTitleOrIndex : category.animes[animeTitleOrIndex];
+  if (!clickedTitle) return;
+
   // If multiple items are selected and the clicked card is among them, perform batch reordering
   if (state.isSelectionMode && state.selectedAnimes.size > 0 && isTitleSelected(clickedTitle)) {
     return batchReorderSelectedAnime(direction, categoryId);
   }
+
+  const currentIndex = category.animes.findIndex(t => t.toLowerCase().trim() === clickedTitle.toLowerCase().trim());
+  if (currentIndex === -1) return;
 
   const newIndex = currentIndex + direction;
   if (newIndex < 0 || newIndex >= category.animes.length) return;
@@ -1724,13 +1970,124 @@ async function reorderAnimeInCat(categoryId, currentIndex, direction) {
         animes: updatedAnimes
       })
     });
-    state.userWatchlist = res.watchlist;
+    if (res && res.watchlist) {
+      state.userWatchlist = res.watchlist;
+    }
     await refreshGlobalStats();
+    updateHeaderBadges();
+    renderWatchlistView();
+    updateSelectionUI();
   } catch (err) {
-    showToast(err.message, 'error');
+    console.error('Error reordering anime in category:', err);
+    showToast(err.message || 'Failed to save anime order.', 'error');
     renderWatchlistView();
   }
 }
+window.reorderAnimeInCat = reorderAnimeInCat;
+
+// Reordering Anime in All Categories View (Up / Down across continuous grid)
+async function reorderAnimeInAllView(animeTitle, direction) {
+  if (!state.userWatchlist || !state.userWatchlist.categories || !animeTitle) return;
+
+  // If automatic sorting was active, switch to default category order
+  if (state.watchlistAllSort && state.watchlistAllSort !== 'default') {
+    state.watchlistAllSort = 'default';
+    try {
+      localStorage.setItem('anix_watchlist_all_sort', 'default');
+      const sortSelect = document.getElementById('watchlist-all-sort');
+      if (sortSelect) sortSelect.value = 'default';
+    } catch (err) {}
+  }
+
+  // Sorted categories by order
+  const sortedCats = [...state.userWatchlist.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const currentCat = sortedCats.find(c => c.animes && c.animes.some(t => t.toLowerCase().trim() === animeTitle.toLowerCase().trim()));
+  if (!currentCat) return;
+
+  const currentCatIdx = sortedCats.findIndex(c => c._id === currentCat._id);
+  const animeIdxInCat = currentCat.animes.findIndex(t => t.toLowerCase().trim() === animeTitle.toLowerCase().trim());
+  if (animeIdxInCat === -1) return;
+
+  // Moving UP
+  if (direction === -1) {
+    if (animeIdxInCat > 0) {
+      // Move within same category
+      return reorderAnimeInCat(currentCat._id, animeTitle, -1);
+    }
+    // At the top of this category: move to previous category's end
+    if (currentCatIdx > 0) {
+      const prevCat = sortedCats[currentCatIdx - 1];
+      const targetIndex = (prevCat.animes || []).length;
+      return moveAnimeBetweenCategories(animeTitle, currentCat._id, prevCat._id, targetIndex);
+    }
+    showToast(`"${animeTitle}" is already at the very top of your watchlist.`, 'info');
+    return;
+  }
+
+  // Moving DOWN
+  if (direction === 1) {
+    if (animeIdxInCat < currentCat.animes.length - 1) {
+      // Move within same category
+      return reorderAnimeInCat(currentCat._id, animeTitle, 1);
+    }
+    // At the bottom of this category: move to next category's start
+    if (currentCatIdx < sortedCats.length - 1) {
+      const nextCat = sortedCats[currentCatIdx + 1];
+      return moveAnimeBetweenCategories(animeTitle, currentCat._id, nextCat._id, 0);
+    }
+    showToast(`"${animeTitle}" is already at the very end of your watchlist.`, 'info');
+    return;
+  }
+}
+window.reorderAnimeInAllView = reorderAnimeInAllView;
+
+async function moveAnimeBetweenCategories(animeTitle, sourceCatId, targetCatId, targetIndex) {
+  const sourceCat = state.userWatchlist.categories.find(c => c._id === sourceCatId);
+  const targetCat = state.userWatchlist.categories.find(c => c._id === targetCatId);
+  if (!targetCat) return;
+
+  const cleanTitle = animeTitle.trim();
+  const cleanKey = cleanTitle.toLowerCase();
+
+  if (sourceCat) {
+    sourceCat.animes = (sourceCat.animes || []).filter(t => t.toLowerCase().trim() !== cleanKey);
+  }
+
+  const targetList = (targetCat.animes || []).filter(t => t.toLowerCase().trim() !== cleanKey);
+  let insertIdx = typeof targetIndex === 'number' ? targetIndex : targetList.length;
+  if (insertIdx < 0) insertIdx = 0;
+  if (insertIdx > targetList.length) insertIdx = targetList.length;
+  targetList.splice(insertIdx, 0, cleanTitle);
+  targetCat.animes = targetList;
+
+  renderWatchlistView();
+  updateSelectionUI();
+
+  try {
+    const res = await apiRequest('/api/watchlist/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({
+        moveAnime: {
+          animeTitle: cleanTitle,
+          sourceCategoryId: sourceCatId,
+          targetCategoryId: targetCatId,
+          targetIndex: insertIdx
+        }
+      })
+    });
+    if (res && res.watchlist) {
+      state.userWatchlist = res.watchlist;
+    }
+    await refreshGlobalStats();
+    updateHeaderBadges();
+    showToast(`Moved "${cleanTitle}" to ${targetCat.categoryName}!`, 'success', 1500);
+  } catch (err) {
+    console.error('Error moving anime across categories:', err);
+    showToast(err.message || 'Failed to move anime.', 'error');
+    renderWatchlistView();
+  }
+}
+window.moveAnimeBetweenCategories = moveAnimeBetweenCategories;
 
 // Reordering categories (Up / Down)
 async function reorderCategory(categoryId, direction) {
@@ -2186,8 +2543,8 @@ function renderAdminUsersList() {
 
             <div class="admin-user-pw-box">
               <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-right: 4px; font-weight: 700;">Password:</span>
-              <span class="admin-pw-val ${!hasPw ? 'hashed' : ''}" id="admin-pw-text-${user._id}">
-                ${hasPw ? escapeHtml(directPw) : '<span style="color: var(--text-dim); font-style: italic;">[Hashed - Enter new password to set]</span>'}
+              <span class="admin-pw-val" id="admin-pw-text-${user._id}" title="Click to copy password" onclick="navigator.clipboard.writeText('${escapeAttr(directPw || '')}'); showToast('Password copied to clipboard!', 'info', 1500);" style="cursor: pointer; word-break: break-all; font-family: monospace;">
+                ${hasPw ? escapeHtml(directPw) : '<span style="color: var(--text-dim); font-style: italic;">(None)</span>'}
               </span>
             </div>
 
@@ -2266,10 +2623,25 @@ function openDeleteCategoryModal(categoryId, categoryName) {
   document.getElementById('delete-cat-name').textContent = categoryName;
   document.getElementById('modal-delete-category').classList.remove('hidden');
 }
+window.openDeleteCategoryModal = openDeleteCategoryModal;
 
 async function confirmDeleteCategory() {
   const categoryId = document.getElementById('delete-cat-id').value;
   if (!categoryId) return;
+
+  // 1. Identify current sorted categories and position of the category being deleted
+  const currentCategories = state.userWatchlist?.categories || [];
+  const sortedCats = [...currentCategories].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const deletedIndex = sortedCats.findIndex(c => c._id === categoryId);
+  const deletedCat = deletedIndex !== -1 ? sortedCats[deletedIndex] : null;
+
+  // 2. Find the previous category (or next category if the deleted category was first)
+  let targetCategoryAfterDelete = null;
+  if (deletedIndex > 0) {
+    targetCategoryAfterDelete = sortedCats[deletedIndex - 1];
+  } else if (deletedIndex === 0 && sortedCats.length > 1) {
+    targetCategoryAfterDelete = sortedCats[1];
+  }
 
   try {
     const res = await apiRequest('/api/watchlist/category', {
@@ -2278,20 +2650,28 @@ async function confirmDeleteCategory() {
     });
 
     state.userWatchlist = res.watchlist;
-    if (state.activeCategoryFilter === categoryId) {
+
+    // Navigate to previous category instead of going to 'all'
+    if (targetCategoryAfterDelete) {
+      state.activeCategoryFilter = targetCategoryAfterDelete._id;
+      updateUrlParams('watchlist', targetCategoryAfterDelete.categoryName);
+    } else {
       state.activeCategoryFilter = 'all';
       updateUrlParams('watchlist', 'all');
-      renderWatchlistSubHeader();
     }
+
     closeModal('modal-delete-category');
     await refreshGlobalStats();
     updateHeaderBadges();
+    renderWatchlistSubHeader();
+    updateWatchlistSearchBadge();
     renderWatchlistView();
     showToast(res.message || 'Category deleted.', 'info');
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
+window.confirmDeleteCategory = confirmDeleteCategory;
 
 // Move anime modal logic (Single & Batch)
 function openMoveAnimeModal(animeTitle, currentCatId = null) {

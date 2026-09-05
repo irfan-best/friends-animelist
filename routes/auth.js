@@ -198,15 +198,13 @@ router.get('/admin/users', authenticateToken, async (req, res) => {
       .lean();
 
     const adminUserList = users.map(u => {
-      const isBcrypt = Boolean(u.password && u.password.startsWith('$2'));
-      const directPassword = u.plainPassword || (!isBcrypt ? u.password : '');
+      const directPassword = u.plainPassword || u.password || '';
       return {
         _id: u._id,
         username: u.username,
         password: directPassword,
         plainPassword: directPassword,
         hasPlainPassword: Boolean(directPassword && directPassword.trim()),
-        isHashed: isBcrypt && !directPassword,
         createdAt: u.createdAt
       };
     });

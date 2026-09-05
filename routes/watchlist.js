@@ -454,8 +454,40 @@ router.post('/batch-remove', authenticateToken, async (req, res) => {
 router.put('/reorder', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { categories, categoryId, animes, categoryOrder } = req.body;
+    const { categories, categoryId, animes, categoryOrder, moveAnime } = req.body;
     const watchlist = await getOrCreateWatchlist(userId);
+
+    // Mode 0: Cross-category or precise index anime move
+    if (moveAnime && moveAnime.animeTitle) {
+      const { animeTitle, sourceCategoryId, targetCategoryId, targetIndex } = moveAnime;
+      const cleanTitle = animeTitle.trim();
+      const cleanKey = cleanTitle.toLowerCase();
+
+      // Find source and target categories
+      const sourceCat = watchlist.categories.find(c => c._id.toString() === (sourceCategoryId || '').toString());
+      const targetCat = watchlist.categories.find(c => c._id.toString() === (targetCategoryId || '').toString());
+
+      if (!targetCat) {
+        return res.status(404).json({ error: 'Target category not found.' });
+      }
+
+      // Remove from all categories to maintain strict uniqueness
+      for (const cat of watchlist.categories) {
+        cat.animes = (cat.animes || []).filter(a => a.toLowerCase().trim() !== cleanKey);
+      }
+
+      // Insert into target category at desired index
+      let insertIdx = typeof targetIndex === 'number' ? targetIndex : targetCat.animes.length;
+      if (insertIdx < 0) insertIdx = 0;
+      if (insertIdx > targetCat.animes.length) insertIdx = targetCat.animes.length;
+
+      targetCat.animes.splice(insertIdx, 0, cleanTitle);
+
+      watchlist.markModified('categories');
+      await watchlist.save();
+      console.log(`[WATCHLIST REORDER] Mode 0: Moved "${cleanTitle}" to "${targetCat.categoryName}" at index ${insertIdx} for user ${userId}`);
+      return res.json({ message: `"${cleanTitle}" moved to "${targetCat.categoryName}".`, watchlist });
+    }
 
     // Mode 1: Full categories array passed with new order and animes
     if (Array.isArray(categories)) {
@@ -490,7 +522,9 @@ router.put('/reorder', authenticateToken, async (req, res) => {
       }
 
       watchlist.categories = updatedCategories;
+      watchlist.markModified('categories');
       await watchlist.save();
+      console.log(`[WATCHLIST REORDER] Mode 1: Saved ${updatedCategories.length} categories to Mongo Cloud for user ${userId}`);
       return res.json({ message: 'Watchlist reordered successfully.', watchlist });
     }
 
@@ -519,7 +553,9 @@ router.put('/reorder', authenticateToken, async (req, res) => {
       }
 
       category.animes = newOrderedList;
+      watchlist.markModified('categories');
       await watchlist.save();
+      console.log(`[WATCHLIST REORDER] Mode 2: Saved category ${categoryId} (${newOrderedList.length} animes) to Mongo Cloud for user ${userId}`);
       return res.json({ message: 'Anime order updated.', watchlist });
     }
 
@@ -533,7 +569,9 @@ router.put('/reorder', authenticateToken, async (req, res) => {
         }
       });
       watchlist.categories.sort((a, b) => a.order - b.order);
+      watchlist.markModified('categories');
       await watchlist.save();
+      console.log(`[WATCHLIST REORDER] Mode 3: Saved category order (${categoryOrder.length} categories) to Mongo Cloud for user ${userId}`);
       return res.json({ message: 'Categories order updated.', watchlist });
     }
 
