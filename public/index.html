@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Anix | Anime Watchlist & Visual Tracker</title>
+  <title>Anix | Anime Watchlist</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=3.7">
+  <link rel="stylesheet" href="style.css?v=4.4">
 </head>
 <body class="dark-theme">
 
@@ -26,7 +26,7 @@
           <i class="fa-solid fa-fire-flame-curved"></i>
         </div>
         <h1 class="brand-title">ANIX</h1>
-        <p class="brand-tagline">Anime Watchlist & Visual Tracker</p>
+        <p class="brand-tagline">Anime Watchlist</p>
       </div>
 
       <div class="auth-card glass-panel">
@@ -71,58 +71,71 @@
     <!-- HEADER -->
     <header class="navbar glass-header">
       <div class="nav-container">
-        <div class="nav-brand" onclick="switchView('watchlist')">
-          <div class="logo-box">
-            <i class="fa-solid fa-fire-flame-curved"></i>
+        <!-- Top Row: Brand on Left, Action Buttons on Right -->
+        <div class="nav-top-row">
+          <div class="nav-brand" onclick="switchView('watchlist')">
+            <div class="logo-box">
+              <i class="fa-solid fa-fire-flame-curved"></i>
+            </div>
+            <div class="brand-text">
+              <span class="brand-name">ANIX</span>
+            </div>
           </div>
-          <div class="brand-text">
-            <span class="brand-name">ANIX</span>
-            <span class="brand-sub">Visual Tracker</span>
+
+          <!-- User Action Buttons (Always on top line with plenty of space on mobile) -->
+          <div class="nav-user">
+            <button id="nav-btn-notifications" class="btn btn-icon btn-notifications" onclick="openNotificationsModal()" title="Milestone Notifications">
+              <i class="fa-solid fa-bell"></i>
+              <span id="nav-notif-badge" class="notif-badge hidden">0</span>
+            </button>
+            <button id="nav-btn-import" class="btn btn-sm btn-primary btn-icon" onclick="openImportModal()" title="Import Watchlist Data">
+              <i class="fa-solid fa-file-import"></i>
+            </button>
+            <button id="nav-btn-settings" class="btn btn-icon btn-settings hidden" onclick="openAdminSettingsModal()" title="Admin Settings & Passwords (Irfan Yoichi)">
+              <i class="fa-solid fa-gear"></i>
+            </button>
+            <button id="nav-btn-help" class="btn btn-icon btn-help" onclick="openHelpModal()" title="Keyboard Shortcuts & Help (h or ?)">
+              <i class="fa-solid fa-circle-question"></i>
+            </button>
+            <button class="btn btn-icon btn-logout" onclick="logout()" title="Log out">
+              <i class="fa-solid fa-arrow-right-from-bracket"></i>
+            </button>
           </div>
         </div>
 
-        <!-- Navigation Tabs -->
-        <nav class="nav-tabs">
-          <button class="nav-tab active" data-view="watchlist" onclick="switchView('watchlist')">
-            <i class="fa-solid fa-house"></i>
-            <span>My Watchlist</span>
-            <span id="nav-watched-badge" class="nav-counter">0</span>
-          </button>
-          <button class="nav-tab" data-view="unwatched" onclick="switchView('unwatched')">
-            <i class="fa-solid fa-clock"></i>
-            <span>Not Watched</span>
-            <span id="nav-unwatched-badge" class="nav-counter">0</span>
-          </button>
-          <button class="nav-tab" data-view="browse" onclick="switchView('browse')">
-            <i class="fa-solid fa-compass"></i>
-            <span>Browse Users</span>
-          </button>
-          <button class="nav-tab" data-view="compare" onclick="switchView('compare')">
-            <i class="fa-solid fa-code-compare"></i>
-            <span>Compare Watchlists</span>
-          </button>
-        </nav>
+        <!-- Second Row (Below Top Line): Navigation Tabs (Desktop) & Dropdown (Mobile) -->
+        <div class="nav-bottom-row">
+          <!-- Navigation Tabs -->
+          <nav class="nav-tabs">
+            <button class="nav-tab active" data-view="watchlist" onclick="switchView('watchlist')">
+              <i class="fa-solid fa-house"></i>
+              <span>My Watchlist</span>
+              <span id="nav-watched-badge" class="nav-counter">0</span>
+            </button>
+            <button class="nav-tab" data-view="unwatched" onclick="switchView('unwatched')">
+              <i class="fa-solid fa-clock"></i>
+              <span>Not Watched</span>
+              <span id="nav-unwatched-badge" class="nav-counter">0</span>
+            </button>
+            <button class="nav-tab" data-view="browse" onclick="switchView('browse')">
+              <i class="fa-solid fa-compass"></i>
+              <span>Browse Users</span>
+            </button>
+            <button class="nav-tab" data-view="compare" onclick="switchView('compare')">
+              <i class="fa-solid fa-code-compare"></i>
+              <span>Compare Watchlists</span>
+            </button>
+          </nav>
 
-        <!-- User Profile & Logout -->
-        <div class="nav-user">
-          <button id="nav-btn-import" class="btn btn-sm btn-primary" onclick="openImportModal()" title="Import Watchlist Data">
-            <i class="fa-solid fa-file-import"></i> <span>Import</span>
-          </button>
-          <div class="user-chip">
-            <div class="user-avatar">
-              <i class="fa-solid fa-user-ninja"></i>
-            </div>
-            <span id="current-username" class="user-name">User</span>
+          <!-- Mobile Navigation Dropdown -->
+          <div class="mobile-nav-select-wrap">
+            <select id="mobile-nav-select" class="select-dropdown mobile-nav-select" onchange="switchView(this.value)">
+              <option value="watchlist">🏠 My Watchlist (0)</option>
+              <option value="unwatched">⏳ Not Watched (0)</option>
+              <option value="browse">🧭 Browse Users</option>
+              <option value="compare">⚔️ Compare Watchlists</option>
+            </select>
           </div>
-          <button id="nav-btn-settings" class="btn btn-icon btn-settings hidden" onclick="openAdminSettingsModal()" title="Admin Settings & Passwords (Irfan Yoichi)">
-            <i class="fa-solid fa-gear"></i>
-          </button>
-          <button id="nav-btn-help" class="btn btn-icon btn-help" onclick="openHelpModal()" title="Keyboard Shortcuts & Help (h or ?)">
-            <i class="fa-solid fa-circle-question"></i>
-          </button>
-          <button class="btn btn-icon btn-logout" onclick="logout()" title="Log out">
-            <i class="fa-solid fa-arrow-right-from-bracket"></i>
-          </button>
         </div>
       </div>
     </header>
@@ -130,20 +143,30 @@
     <!-- SECONDARY HEADER FOR "MY WATCHLIST" (Categories as Headers) -->
     <div id="watchlist-sub-header" class="watchlist-sub-header glass-sub-header">
       <div class="sub-header-container">
-        <!-- Full-Width Categories Header -->
+        <!-- Full-Width Categories Header for Desktop -->
         <div id="sub-header-categories-list" class="sub-header-categories">
           <!-- Dynamically populated category headers / tabs -->
+        </div>
+        <!-- Mobile Category Dropdown Selector & Reorder Trigger -->
+        <div class="mobile-cat-select-wrap">
+          <div class="mobile-cat-select-row">
+            <select id="mobile-watchlist-category-select" class="select-dropdown mobile-cat-select" onchange="filterOrScrollCategory(this.value)">
+              <option value="all">📂 All Categories</option>
+            </select>
+            <button id="btn-mobile-reorder-cats" class="btn btn-outline btn-sm btn-icon" onclick="openReorderCategoriesModal()" title="Reorder Categories">
+              <i class="fa-solid fa-arrow-down-up-across-line"></i>
+            </button>
+          </div>
         </div>
         <!-- Action Buttons Toolbar Below Categories -->
         <div class="sub-header-toolbar">
           <div class="sub-header-toolbar-left">
             <div id="watchlist-all-sort-wrap" class="sorting-box watchlist-all-sorting">
-              <label for="watchlist-all-sort"><i class="fa-solid fa-arrow-down-a-z"></i> Sort By:</label>
-              <select id="watchlist-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistAllSortChange()">
+              <select id="watchlist-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistAllSortChange()" title="Sort Watchlist">
                 <option value="default">Category Order (Default)</option>
-                <option value="alpha-asc">Alphabetical (Ascending A-Z)</option>
-                <option value="alpha-desc">Alphabetical (Descending Z-A)</option>
-                <option value="popularity-desc">Most Watched Globally (Descending)</option>
+                <option value="alpha-asc">ASC (A-Z)</option>
+                <option value="alpha-desc">DESC (Z-A)</option>
+                <option value="popularity-desc">Populary</option>
               </select>
             </div>
             <button id="btn-open-watchlist-search" class="btn btn-sm btn-outline" onclick="openWatchlistSearch()" title="Search in Category (Space), All Images (Shift+Space)">
@@ -158,14 +181,14 @@
             </div>
           </div>
           <div class="sub-header-toolbar-right">
-            <button class="btn btn-sm btn-accent" onclick="openNewCategoryModal()" title="Create New Category">
-              <i class="fa-solid fa-plus"></i> <span>New Category</span>
+            <button id="btn-open-category-modal" class="btn btn-sm btn-accent btn-icon" onclick="openNewCategoryModal()" title="Create New Category">
+              <i class="fa-solid fa-plus"></i>
             </button>
             <button id="btn-toggle-selection-watchlist" class="btn btn-sm btn-selection-toggle" onclick="toggleSelectionMode()">
               <i class="fa-regular fa-square-check"></i> <span class="selection-toggle-text">Selection Mode: OFF</span>
             </button>
-            <button class="btn btn-sm btn-outline" onclick="openImportModal()" title="Import Categories & Anime">
-              <i class="fa-solid fa-file-import"></i> <span>Import</span>
+            <button id="btn-copy-displayed-watchlist" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
+              <i class="fa-regular fa-copy"></i> <span>Copy List</span>
             </button>
           </div>
         </div>
@@ -196,15 +219,15 @@
       <!-- VIEW 2: NOT WATCHED / UNWATCHED ANIME -->
       <section id="view-unwatched" class="view-panel hidden">
         <!-- Filter & Search Controls -->
-        <div class="controls-bar glass-card">
-          <div class="unwatched-search-container" style="display: flex; align-items: center; gap: 0.5rem; flex: 1; max-width: 450px;">
+        <div class="controls-bar glass-card unwatched-controls-bar">
+          <div class="unwatched-search-container">
             <button id="btn-open-unwatched-search" class="btn btn-sm btn-outline hidden" onclick="openUnwatchedSearch()" title="Search unwatched (Space), All Images (Shift+Space)">
               <i class="fa-solid fa-magnifying-glass"></i> <span>Search</span>
             </button>
-            <div id="unwatched-search-wrap" class="search-box unwatched-search-box" style="flex: 1; max-width: 100%;">
+            <div id="unwatched-search-wrap" class="search-box unwatched-search-box">
               <i class="fa-solid fa-magnifying-glass"></i>
               <span id="unwatched-search-scope-badge" class="search-scope-badge" onclick="toggleUnwatchedSearchScope()" title="Click to toggle Unwatched / Global Search">Unwatched</span>
-              <input type="text" id="unwatched-search" placeholder="Search unwatched (Space, Shift+Space: All)..." oninput="renderUnwatchedView()">
+              <input type="text" id="unwatched-search" placeholder="Search unwatched" oninput="renderUnwatchedView()">
               <button id="clear-search-btn" class="clear-btn hidden" onclick="clearUnwatchedSearch()" title="Clear text"><i class="fa-solid fa-xmark"></i></button>
               <button class="close-search-box-btn" onclick="closeUnwatchedSearch()" title="Close search (Esc)"><i class="fa-solid fa-xmark"></i></button>
             </div>
@@ -212,15 +235,17 @@
 
           <div class="controls-group">
             <div class="sorting-box">
-              <label for="unwatched-sort"><i class="fa-solid fa-arrow-down-wide-short"></i> Sort By:</label>
-              <select id="unwatched-sort" class="select-dropdown" onchange="renderUnwatchedView()">
-                <option value="popularity-desc" selected>Most Watched Globally (Descending)</option>
-                <option value="alpha-asc">Alphabetical (Ascending A-Z)</option>
-                <option value="alpha-desc">Alphabetical (Descending Z-A)</option>
+              <select id="unwatched-sort" class="select-dropdown" onchange="renderUnwatchedView()" title="Sort Not Watched">
+                <option value="popularity-desc" selected>Populary</option>
+                <option value="alpha-asc">ASC (A-Z)</option>
+                <option value="alpha-desc">DESC (Z-A)</option>
               </select>
             </div>
             <button id="btn-toggle-selection-unwatched" class="btn btn-sm btn-selection-toggle" onclick="toggleSelectionMode()">
               <i class="fa-regular fa-square-check"></i> <span class="selection-toggle-text">Selection Mode: OFF</span>
+            </button>
+            <button id="btn-copy-displayed-unwatched" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
+              <i class="fa-regular fa-copy"></i> <span>Copy List</span>
             </button>
           </div>
         </div>
@@ -240,35 +265,20 @@
 
       <!-- VIEW 3: BROWSE OTHER USERS -->
       <section id="view-browse" class="view-panel hidden">
-        <!-- All Community Users Directory Grid -->
-        <div class="users-directory-section glass-card">
-          <div class="directory-header">
-            <div class="directory-title">
-              <i class="fa-solid fa-users"></i>
-              <h4>Community Members (<span id="browse-users-count">0</span>)</h4>
+        <!-- Community Member Selector Top Bar -->
+        <div class="browse-user-selector-bar glass-card">
+          <div class="browse-selector-controls">
+            <div class="browse-user-dropdown-wrap">
+              <label for="browse-user-select" class="browse-select-label" title="Select Member"><i class="fa-solid fa-user-astronaut"></i></label>
+              <select id="browse-user-select" class="select-dropdown browse-user-select" onchange="handleBrowseUserSelect(this.value)">
+                <!-- Dynamically populated community members -->
+              </select>
             </div>
-            <p class="directory-hint">Click on any user below to view their watchlist and categories:</p>
-          </div>
-          <div id="browse-users-grid" class="users-cards-grid">
-            <!-- Dynamically populated user clickable cards -->
-          </div>
-        </div>
-
-        <!-- Selected User Profile Header -->
-        <div id="browse-profile-header" class="profile-header glass-card hidden">
-          <div class="profile-avatar">
-            <i class="fa-solid fa-user-astronaut"></i>
-          </div>
-          <div class="profile-info">
-            <div class="profile-title-row">
-              <h3 id="browse-profile-username" class="profile-username">User</h3>
-              <span class="badge badge-readonly"><i class="fa-solid fa-lock"></i> Read-Only View</span>
-            </div>
-            <p id="browse-profile-meta" class="profile-meta">Total Watched: 0 Anime across 0 Categories</p>
-          </div>
-          <div class="profile-actions">
-            <button id="browse-compare-btn" class="btn btn-accent btn-sm" onclick="compareWithSelectedUser()">
-              <i class="fa-solid fa-code-compare"></i> Compare With Me
+            <button id="browse-compare-btn" class="btn btn-accent btn-sm" onclick="compareWithSelectedUser()" title="Compare Watchlists with this member">
+              <i class="fa-solid fa-code-compare"></i> <span>Compare</span>
+            </button>
+            <button id="btn-copy-displayed-browse" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
+              <i class="fa-regular fa-copy"></i> <span>Copy List</span>
             </button>
           </div>
         </div>
@@ -276,18 +286,24 @@
         <!-- Browse Categories Sub-Header (Categories as Headers) -->
         <div id="browse-sub-header" class="glass-sub-header hidden" style="margin-top: 1.25rem; margin-bottom: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
           <div class="sub-header-container" style="padding: 0.75rem 1.25rem; display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Desktop Category Chips -->
             <div id="browse-sub-header-categories-list" class="sub-header-categories">
               <!-- Dynamically populated category chips for selected user -->
+            </div>
+            <!-- Mobile Category Dropdown Selector for Browse -->
+            <div class="mobile-cat-select-wrap">
+              <select id="mobile-browse-category-select" class="select-dropdown mobile-cat-select" onchange="filterBrowseCategory(this.value)">
+                <option value="all">📂 All Categories</option>
+              </select>
             </div>
             <div id="browse-sub-header-toolbar" class="sub-header-toolbar" style="border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.45rem;">
               <div class="sub-header-toolbar-left">
                 <div id="browse-all-sort-wrap" class="sorting-box watchlist-all-sorting">
-                  <label for="browse-all-sort"><i class="fa-solid fa-arrow-down-a-z"></i> Sort By:</label>
-                  <select id="browse-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleBrowseAllSortChange()">
+                  <select id="browse-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleBrowseAllSortChange()" title="Sort Watchlist">
                     <option value="default">Category Order (Default)</option>
-                    <option value="alpha-asc">Alphabetical (Ascending A-Z)</option>
-                    <option value="alpha-desc">Alphabetical (Descending Z-A)</option>
-                    <option value="popularity-desc">Most Watched Globally (Descending)</option>
+                    <option value="alpha-asc">ASC (A-Z)</option>
+                    <option value="alpha-desc">DESC (Z-A)</option>
+                    <option value="popularity-desc">Populary</option>
                   </select>
                 </div>
               </div>
@@ -303,7 +319,7 @@
         <div id="browse-empty-state" class="empty-state glass-card">
           <div class="empty-icon"><i class="fa-solid fa-compass"></i></div>
           <h3>Select a Community Member</h3>
-          <p>Click on any username card above to inspect their custom categories and ranked anime images.</p>
+          <p>Select a community member from the dropdown above to inspect their custom categories and ranked anime collection.</p>
         </div>
       </section>
 
@@ -319,11 +335,10 @@
         <!-- User Selection Dual Pickers -->
         <div class="compare-selectors-bar glass-card">
           <div class="compare-picker">
-            <span class="picker-tag source-tag"><i class="fa-solid fa-user"></i> Source User (Base)</span>
+            <span class="picker-tag source-tag"><i class="fa-solid fa-user"></i> Source</span>
             <select id="compare-source-select" class="select-dropdown" onchange="runComparison()">
               <!-- Dynamically populated users -->
             </select>
-            <p class="picker-desc">"I haven't watched..."</p>
           </div>
 
           <button class="btn btn-icon swap-btn" onclick="swapCompareUsers()" title="Swap users">
@@ -331,11 +346,10 @@
           </button>
 
           <div class="compare-picker">
-            <span class="picker-tag dest-tag"><i class="fa-solid fa-user-check"></i> Destination User (Target)</span>
+            <span class="picker-tag dest-tag"><i class="fa-solid fa-user-check"></i> Target</span>
             <select id="compare-dest-select" class="select-dropdown" onchange="runComparison()">
               <!-- Dynamically populated users -->
             </select>
-            <p class="picker-desc">"...that they have watched"</p>
           </div>
         </div>
 
@@ -350,11 +364,11 @@
           </div>
 
           <div class="sorting-box">
-            <label for="compare-sort"><i class="fa-solid fa-arrow-down-wide-short"></i> Sort By:</label>
-            <select id="compare-sort" class="select-dropdown" onchange="renderCompareResults()">
-              <option value="popularity-desc" selected>Most Watched Globally (Descending)</option>
-              <option value="alpha-asc">Alphabetical (Ascending A-Z)</option>
-              <option value="alpha-desc">Alphabetical (Descending Z-A)</option>
+            <select id="compare-sort" class="select-dropdown" onchange="renderCompareResults()" title="Sort Comparison">
+              <option value="destination-rank" selected>Destination Ranking</option>
+              <option value="popularity-desc">Populary</option>
+              <option value="alpha-asc">ASC (A-Z)</option>
+              <option value="alpha-desc">DESC (Z-A)</option>
             </select>
           </div>
         </div>
@@ -376,39 +390,36 @@
 
     <!-- FLOATING SELECTION ACTION BAR -->
     <div id="floating-selection-bar" class="floating-selection-bar glass-panel hidden">
-      <div class="selection-bar-left">
-        <div class="selection-count-pill">
+      <!-- First Row: Number of selected, Clear selection, Up and Down arrows -->
+      <div class="selection-bar-row selection-bar-row-primary">
+        <div class="selection-count-pill" title="Selected Count">
           <i class="fa-solid fa-check-double"></i>
-          <span><strong id="selection-count-num">0</strong> selected</span>
+          <strong id="selection-count-num">0</strong>
         </div>
         <button class="btn btn-icon btn-sm" onclick="clearSelection()" title="Clear selection">
           <i class="fa-solid fa-arrow-rotate-left"></i>
         </button>
+        <button id="bar-btn-move-above" class="btn btn-icon btn-sm btn-primary hidden" onclick="batchReorderSelectedAnime(-1)" title="Shift Up">
+          <i class="fa-solid fa-arrow-up"></i>
+        </button>
+        <button id="bar-btn-move-below" class="btn btn-icon btn-sm btn-primary hidden" onclick="batchReorderSelectedAnime(1)" title="Shift Down">
+          <i class="fa-solid fa-arrow-down"></i>
+        </button>
       </div>
-      <div class="selection-bar-actions">
-        <!-- Actions for Watchlist -->
-        <button id="bar-btn-move-above" class="btn btn-primary btn-sm hidden" onclick="batchReorderSelectedAnime(-1)" title="Move selected images above (before previous image)">
-          <i class="fa-solid fa-arrow-up"></i> Move Above
+
+      <!-- Second Row: Move to Category, Remove, Watched, Exit Mode -->
+      <div class="selection-bar-row selection-bar-row-secondary">
+        <button id="bar-btn-move" class="btn btn-outline btn-sm hidden" onclick="openBatchMoveModal()" title="Move to Category">
+          <i class="fa-solid fa-arrows-split-up-and-left"></i> <span>Move</span>
         </button>
-        <button id="bar-btn-move-below" class="btn btn-primary btn-sm hidden" onclick="batchReorderSelectedAnime(1)" title="Move selected images below (after next image)">
-          <i class="fa-solid fa-arrow-down"></i> Move Below
+        <button id="bar-btn-remove" class="btn btn-icon btn-sm btn-danger hidden" onclick="batchRemoveSelected()" title="Remove selected anime">
+          <i class="fa-solid fa-trash-can"></i>
         </button>
-        <button id="bar-btn-move" class="btn btn-outline btn-sm hidden" onclick="openBatchMoveModal()">
-          <i class="fa-solid fa-arrows-split-up-and-left"></i> Move to Category
+        <button id="bar-btn-add" class="btn btn-accent btn-sm hidden" onclick="openBatchAddModal()" title="Mark Watched">
+          <i class="fa-solid fa-plus"></i> <span>Watched</span>
         </button>
-        <button id="bar-btn-remove" class="btn btn-danger btn-sm hidden" onclick="batchRemoveSelected()">
-          <i class="fa-solid fa-trash-can"></i> Remove
-        </button>
-        <!-- Action for Unwatched -->
-        <button id="bar-btn-add" class="btn btn-accent btn-sm hidden" onclick="openBatchAddModal()">
-          <i class="fa-solid fa-plus"></i> Mark Watched
-        </button>
-        <!-- Common actions -->
-        <button class="btn btn-outline btn-sm" onclick="copySelectedNames()">
-          <i class="fa-regular fa-copy"></i> Copy Names
-        </button>
-        <button class="btn btn-outline btn-sm" onclick="toggleSelectionMode(false)">
-          <i class="fa-solid fa-xmark"></i> Exit Mode
+        <button class="btn btn-icon btn-sm btn-outline" onclick="toggleSelectionMode(false)" title="Exit Selection Mode">
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
     </div>
@@ -618,6 +629,66 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline" onclick="closeModal('modal-watchers')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SELECT USER TO BROWSE -->
+  <div id="modal-browse-users" class="modal-overlay hidden" onclick="handleModalBackdropClick(event, 'modal-browse-users')">
+    <div class="modal-card glass-panel" onclick="event.stopPropagation()" style="max-width: 520px; width: 95%;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-users text-highlight"></i> Select Member to Browse</h3>
+        <button class="btn-close" onclick="closeBrowseUserSelectModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="padding-top: 0.75rem;">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <input type="text" id="browse-users-modal-search" class="form-input" placeholder="Search members by name..." oninput="filterBrowseUsersModalList()" autocomplete="off">
+        </div>
+        <div id="browse-users-modal-list" class="browse-users-modal-list" style="max-height: 55vh; overflow-y: auto;">
+          <!-- Dynamically populated user list items -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeBrowseUserSelectModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: REORDER CATEGORIES (FOR MOBILE & TOUCH) -->
+  <div id="modal-reorder-categories" class="modal-overlay hidden" onclick="handleModalBackdropClick(event, 'modal-reorder-categories')">
+    <div class="modal-card glass-panel" onclick="event.stopPropagation()" style="max-width: 480px; width: 95%;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-arrow-down-up-across-line text-highlight"></i> Reorder Categories</h3>
+        <button class="btn-close" onclick="closeModal('modal-reorder-categories')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="padding-top: 0.75rem;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+          Tap <i class="fa-solid fa-arrow-up"></i> or <i class="fa-solid fa-arrow-down"></i> to reorder your categories:
+        </p>
+        <div id="reorder-categories-modal-list" class="reorder-categories-modal-list" style="max-height: 55vh; overflow-y: auto;">
+          <!-- Dynamically populated categories with Up/Down buttons -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="closeModal('modal-reorder-categories')">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: MILESTONE NOTIFICATIONS -->
+  <div id="modal-notifications" class="modal-overlay hidden" onclick="handleModalBackdropClick(event, 'modal-notifications')">
+    <div class="modal-card glass-panel" onclick="event.stopPropagation()" style="max-width: 520px; width: 95%;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-bell text-highlight"></i> Milestone Notifications</h3>
+        <button class="btn-close" onclick="closeModal('modal-notifications')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="padding-top: 0.75rem;">
+        <div id="notifications-modal-list" class="notifications-modal-list" style="max-height: 58vh; overflow-y: auto;">
+          <!-- Dynamically populated celebratory milestone cards -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('modal-notifications')">Close</button>
       </div>
     </div>
   </div>
@@ -845,6 +916,13 @@ Tensura</div>
               </div>
               <div class="shortcut-keys"><kbd>↓</kbd></div>
             </div>
+            <div class="shortcut-row">
+              <div class="shortcut-desc">
+                <strong>Copy Anime List</strong>
+                <span>Copy all displayed anime names in order to clipboard</span>
+              </div>
+              <div class="shortcut-keys"><kbd>l</kbd></div>
+            </div>
           </div>
 
           <!-- Section 5: Dialog Boxes & General -->
@@ -906,6 +984,6 @@ Tensura</div>
   </div>
 
   <!-- Application Scripts -->
-  <script src="app.js?v=3.7"></script>
+  <script src="app.js?v=4.4"></script>
 </body>
 </html>

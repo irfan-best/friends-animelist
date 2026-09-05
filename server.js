@@ -8,6 +8,7 @@ const { ensureImagesDirectory } = require('./utils/imageScanner');
 const authRoutes = require('./routes/auth');
 const animeRoutes = require('./routes/anime');
 const watchlistRoutes = require('./routes/watchlist');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 const PORT = process.env.PORT || 3009;
@@ -46,6 +47,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api', authRoutes);
 app.use('/api/animes', animeRoutes);
 app.use('/api/watchlist', watchlistRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Fallback for SPA
 app.get('*', (req, res) => {

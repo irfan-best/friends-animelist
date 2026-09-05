@@ -245,7 +245,8 @@ function showAuth() {
 async function showApp() {
   document.getElementById('auth-view').classList.add('hidden');
   document.getElementById('app-view').classList.remove('hidden');
-  document.getElementById('current-username').textContent = state.currentUser.username;
+  const usernameEl = document.getElementById('current-username');
+  if (usernameEl) usernameEl.textContent = state.currentUser.username;
 
   const isIrfan = canEditAnimeImage();
   if (isIrfan) {
@@ -261,6 +262,7 @@ async function showApp() {
 
   await loadCoreData();
   restoreViewFromUrl();
+  fetchNotifications();
 }
 
 // ==========================================
@@ -298,6 +300,15 @@ function updateHeaderBadges() {
   if (watchedBadge) watchedBadge.textContent = totalWatched;
   if (unwatchedBadge) unwatchedBadge.textContent = totalUnwatched;
 
+  // Update mobile navigation select options
+  const mobileNavSelect = document.getElementById('mobile-nav-select');
+  if (mobileNavSelect) {
+    const optWl = mobileNavSelect.querySelector('option[value="watchlist"]');
+    const optUw = mobileNavSelect.querySelector('option[value="unwatched"]');
+    if (optWl) optWl.textContent = `🏠 My Watchlist (${totalWatched})`;
+    if (optUw) optUw.textContent = `⏳ Not Watched (${totalUnwatched})`;
+  }
+
   // Update watchlist stats strip
   const statWatched = document.getElementById('stats-total-watched');
   const statCats = document.getElementById('stats-total-categories');
@@ -310,6 +321,9 @@ function updateHeaderBadges() {
   if (state.currentView === 'watchlist') {
     renderWatchlistSubHeader();
   }
+
+  // Refresh notifications badge
+  fetchNotifications();
 }
 
 function getWatchedTitlesSet(watchlist = state.userWatchlist) {
@@ -467,6 +481,12 @@ function switchView(viewName, updateUrl = true) {
     }
   });
 
+  // Mobile nav dropdown sync
+  const mobileNavSelect = document.getElementById('mobile-nav-select');
+  if (mobileNavSelect && mobileNavSelect.value !== viewName) {
+    mobileNavSelect.value = viewName;
+  }
+
   // Update view panels
   document.querySelectorAll('.view-panel').forEach(panel => {
     panel.classList.add('hidden');
@@ -581,7 +601,7 @@ function updateUnwatchedSearchBadge() {
   } else {
     badge.textContent = 'Unwatched';
     badge.classList.remove('global');
-    if (input) input.placeholder = 'Search unwatched... (Space)';
+    if (input) input.placeholder = 'Search unwatched';
   }
 }
 
@@ -778,6 +798,17 @@ function renderWatchlistSubHeader() {
     container.appendChild(chip);
   });
 
+  // Mobile category dropdown selector
+  const mobileCatSelect = document.getElementById('mobile-watchlist-category-select');
+  if (mobileCatSelect) {
+    let optionsHtml = `<option value="all" ${isAllActive ? 'selected' : ''}>📂 All Categories (${totalWatched})</option>`;
+    sortedCats.forEach(cat => {
+      const isCatActive = isCategoryActive(cat);
+      optionsHtml += `<option value="${escapeAttr(cat._id)}" ${isCatActive ? 'selected' : ''}>📁 ${escapeHtml(cat.categoryName)} (${cat.animes ? cat.animes.length : 0})</option>`;
+    });
+    mobileCatSelect.innerHTML = optionsHtml;
+  }
+
   updateSelectionButtonTexts();
 }
 
@@ -868,15 +899,20 @@ function updateSelectionUI() {
       const hasSelection = state.selectedAnimes.size > 0;
 
       if (state.currentView === 'watchlist') {
+        const isAllView = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+        const isSortDisabled = isAllView && state.watchlistAllSort && state.watchlistAllSort !== 'default';
+
         if (btnMoveAbove) {
           btnMoveAbove.classList.remove('hidden');
-          btnMoveAbove.disabled = !hasSelection;
-          btnMoveAbove.style.opacity = hasSelection ? '1' : '0.4';
+          btnMoveAbove.disabled = !hasSelection || isSortDisabled;
+          btnMoveAbove.style.opacity = (hasSelection && !isSortDisabled) ? '1' : '0.3';
+          btnMoveAbove.title = isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Shift Up";
         }
         if (btnMoveBelow) {
           btnMoveBelow.classList.remove('hidden');
-          btnMoveBelow.disabled = !hasSelection;
-          btnMoveBelow.style.opacity = hasSelection ? '1' : '0.4';
+          btnMoveBelow.disabled = !hasSelection || isSortDisabled;
+          btnMoveBelow.style.opacity = (hasSelection && !isSortDisabled) ? '1' : '0.3';
+          btnMoveBelow.title = isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Shift Down";
         }
         if (btnMove) {
           btnMove.classList.remove('hidden');
@@ -1237,127 +1273,54 @@ function renderWatchlistView() {
 
   // ----------------------------------------------------
   // SINGLE CATEGORY FILTER VIEW:
-  // Show only images belonging to the selected category (without active-filter-banner)
+  // Show only images belonging to the selected category (directly in grid, no duplicate category header)
   // ----------------------------------------------------
   const matchedCats = sortedCats.filter(c => isCategoryActive(c));
   const displayedCats = matchedCats.length > 0 ? matchedCats : sortedCats;
 
-  displayedCats.forEach((cat, catIdx) => {
-    const catBlock = document.createElement('div');
-    catBlock.className = 'category-block';
-    catBlock.setAttribute('data-category-id', cat._id);
-
-    const isFirst = catIdx === 0;
-    const isLast = catIdx === displayedCats.length - 1;
-
-    catBlock.innerHTML = `
-      <div class="category-header" draggable="true" title="Double-click to rename, or drag to reorder category">
-        <div class="category-title-wrap" title="Double-click to rename">
-          <i class="fa-solid fa-grip-vertical category-drag-handle" title="Drag to reorder category"></i>
-          <i class="fa-solid fa-folder-open text-highlight"></i>
-          <h3 class="category-title">${escapeHtml(cat.categoryName)}</h3>
-          <span class="category-count">${cat.animes ? cat.animes.length : 0} anime</span>
-        </div>
-        <div class="category-controls">
-          <button class="btn btn-icon" title="Rename category" onclick="event.stopPropagation(); openEditCategoryModal('${cat._id}', '${escapeAttr(cat.categoryName)}')">
-            <i class="fa-solid fa-pen"></i>
-          </button>
-          <button class="btn btn-icon" title="Move category up" onclick="reorderCategory('${cat._id}', -1)" ${isFirst || displayedCats.length === 1 ? 'disabled style="opacity:0.3"' : ''}>
-            <i class="fa-solid fa-chevron-up"></i>
-          </button>
-          <button class="btn btn-icon" title="Move category down" onclick="reorderCategory('${cat._id}', 1)" ${isLast || displayedCats.length === 1 ? 'disabled style="opacity:0.3"' : ''}>
-            <i class="fa-solid fa-chevron-down"></i>
-          </button>
-          <button class="btn btn-icon btn-danger" title="Delete category" onclick="openDeleteCategoryModal('${cat._id}', '${escapeAttr(cat.categoryName)}')">
-            <i class="fa-solid fa-trash-can"></i>
-          </button>
-        </div>
-      </div>
-      <div class="category-body drop-zone" data-cat-id="${cat._id}" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${cat._id}')">
-        <div class="anime-grid" id="cat-grid-${cat._id}"></div>
-      </div>
-    `;
-
-    // Category drag-and-drop listeners for reordering blocks
-    const catHeader = catBlock.querySelector('.category-header');
-    catHeader.addEventListener('dblclick', (e) => {
-      if (e.target.closest('button') || e.target.closest('.category-controls')) return;
-      e.preventDefault();
-      e.stopPropagation();
-      openEditCategoryModal(cat._id, cat.categoryName);
-    });
-
-    catHeader.addEventListener('dragstart', (e) => {
-      if (e.target.closest('button') || e.target.closest('.category-controls')) {
-        e.preventDefault();
-        return;
-      }
-      state.draggedCategoryId = cat._id;
-      state.draggedAnime = null;
-      e.dataTransfer.setData('category/id', cat._id);
-      e.dataTransfer.effectAllowed = 'move';
-      catBlock.classList.add('cat-dragging');
-    });
-
-    catHeader.addEventListener('dragend', () => {
-      catBlock.classList.remove('cat-dragging');
-      state.draggedCategoryId = null;
-      document.querySelectorAll('.category-block').forEach(b => b.classList.remove('cat-drag-over'));
-      document.querySelectorAll('.sub-cat-chip').forEach(c => c.classList.remove('drag-over'));
-    });
-
-    catBlock.addEventListener('dragover', (e) => {
-      if (!state.draggedCategoryId || state.draggedCategoryId === cat._id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      catBlock.classList.add('cat-drag-over');
-    });
-
-    catBlock.addEventListener('dragleave', (e) => {
-      if (!catBlock.contains(e.relatedTarget)) {
-        catBlock.classList.remove('cat-drag-over');
-      }
-    });
-
-    catBlock.addEventListener('drop', (e) => {
-      if (!state.draggedCategoryId || state.draggedCategoryId === cat._id) return;
-      e.preventDefault();
-      catBlock.classList.remove('cat-drag-over');
-      const sourceCatId = state.draggedCategoryId;
-      state.draggedCategoryId = null;
-      reorderCategoriesByDrag(sourceCatId, cat._id);
-    });
-
-    const grid = catBlock.querySelector(`#cat-grid-${cat._id}`);
-
+  displayedCats.forEach((cat) => {
     const displayedAnimes = (cat.animes || []).filter(t => !query || t.toLowerCase().includes(query));
 
     if (!cat.animes || cat.animes.length === 0) {
-      grid.parentElement.innerHTML = `
-        <div class="empty-category-notice">
-          <i class="fa-regular fa-folder-open"></i>
-          <p>No anime in this category yet. Add from <strong>Not Watched</strong> or drag an anime card here!</p>
+      container.innerHTML = `
+        <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
+          <i class="fa-regular fa-folder-open" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
+          <h4 style="color: #fff; margin-bottom: 0.25rem;">No Anime in Category</h4>
+          <p style="color: var(--text-muted);">No anime in "${escapeHtml(cat.categoryName)}" yet. Add from <a href="#" onclick="switchView('unwatched'); return false;" style="color: var(--secondary); text-decoration: underline;">Not Watched</a> or drag an anime card here!</p>
         </div>
       `;
-    } else if (displayedAnimes.length === 0) {
-      grid.parentElement.innerHTML = `
-        <div class="empty-category-notice" style="padding: 2rem;">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <p>No matches for "<strong>${escapeHtml(query)}</strong>" in this category.</p>
-          <button class="btn btn-sm btn-outline" style="margin-top: 0.5rem;" onclick="toggleWatchlistSearchScope()">
+      return;
+    }
+
+    if (displayedAnimes.length === 0) {
+      container.innerHTML = `
+        <div class="empty-category-notice glass-card" style="padding: 2.5rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
+          <i class="fa-solid fa-magnifying-glass" style="font-size: 2rem; color: var(--text-dim); margin-bottom: 0.5rem;"></i>
+          <h4 style="color: #fff; margin-bottom: 0.25rem;">No Matches Found</h4>
+          <p style="color: var(--text-muted);">No matches for "<strong>${escapeHtml(query)}</strong>" in this category.</p>
+          <button class="btn btn-sm btn-outline" style="margin-top: 0.75rem;" onclick="toggleWatchlistSearchScope()">
             <i class="fa-solid fa-globe"></i> Search All Images (Shift+Space)
           </button>
         </div>
       `;
-    } else {
-      displayedAnimes.forEach((animeTitle, animeIdx) => {
-        const meta = findAnimeMeta(animeTitle);
-        const card = createWatchlistAnimeCard(animeTitle, meta, cat._id, animeIdx, displayedAnimes.length, null, false);
-        grid.appendChild(card);
-      });
+      return;
     }
 
-    container.appendChild(catBlock);
+    const grid = document.createElement('div');
+    grid.className = 'anime-grid single-category-grid drop-zone';
+    grid.id = `cat-grid-${cat._id}`;
+    grid.setAttribute('data-cat-id', cat._id);
+    grid.ondragover = (e) => handleDragOver(e);
+    grid.ondragleave = (e) => handleDragLeave(e);
+    grid.ondrop = (e) => handleDrop(e, cat._id);
+
+    displayedAnimes.forEach((animeTitle, animeIdx) => {
+      const meta = findAnimeMeta(animeTitle);
+      const card = createWatchlistAnimeCard(animeTitle, meta, cat._id, animeIdx, displayedAnimes.length, null, false);
+      grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
   });
 
   renderWatchlistSubHeader();
@@ -1368,63 +1331,24 @@ function renderWatchlistView() {
   }
 }
 
-// Dynamic Grid Row Poster Alignment
-// Ensures all cards in the same row have matching poster-wrap heights so image names are strictly on the same line
-let gridAlignRaf = null;
-
+// Grid Row Poster Alignment - Natural sizing without artificial blank space
 function triggerGridRowAlignment() {
-  if (gridAlignRaf) cancelAnimationFrame(gridAlignRaf);
-  gridAlignRaf = requestAnimationFrame(() => {
-    alignGridRowPosters();
-  });
+  alignGridRowPosters();
 }
 window.triggerGridRowAlignment = triggerGridRowAlignment;
 
 function alignGridRowPosters() {
-  const grids = document.querySelectorAll('.anime-grid');
-  grids.forEach(grid => {
-    const cards = Array.from(grid.querySelectorAll('.anime-card'));
-    if (cards.length === 0) return;
-
-    // Reset poster wraps first to allow natural sizing
-    cards.forEach(card => {
-      const wrap = card.querySelector('.card-poster-wrap');
-      if (wrap) wrap.style.minHeight = '';
-    });
-
-    // Group cards by their row position using offsetTop rounded to 8px
-    const rows = new Map();
-    cards.forEach(card => {
-      const top = Math.round(card.offsetTop / 8) * 8;
-      if (!rows.has(top)) rows.set(top, []);
-      rows.get(top).push(card);
-    });
-
-    rows.forEach(rowCards => {
-      let maxImgH = 0;
-      rowCards.forEach(card => {
-        const img = card.querySelector('.card-poster');
-        if (img) {
-          const h = img.offsetHeight || 0;
-          if (h > maxImgH) maxImgH = h;
-        }
-      });
-      if (maxImgH > 0) {
-        rowCards.forEach(card => {
-          const wrap = card.querySelector('.card-poster-wrap');
-          if (wrap) wrap.style.minHeight = `${maxImgH}px`;
-        });
-      }
-    });
+  document.querySelectorAll('.card-poster-wrap').forEach(wrap => {
+    wrap.style.minHeight = '';
   });
 }
 window.alignGridRowPosters = alignGridRowPosters;
-window.addEventListener('resize', triggerGridRowAlignment);
 
 function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, categoryName = null, isAllView = false) {
+  const isSortDisabled = isAllView && state.watchlistAllSort && state.watchlistAllSort !== 'default';
   const card = document.createElement('div');
   card.className = 'anime-card';
-  card.setAttribute('draggable', 'true');
+  card.setAttribute('draggable', isSortDisabled ? 'false' : 'true');
   card.setAttribute('data-anime-title', title);
   card.setAttribute('data-category-id', categoryId);
 
@@ -1480,10 +1404,10 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
             <i class="fa-solid fa-arrow-down"></i>
           </button>
         ` : `
-          <button class="btn btn-icon" title="Move up in overall order" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
+          <button class="btn btn-icon" title="${isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Move up in overall order"}" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', -1)" ${(isFirst || isSortDisabled) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}>
             <i class="fa-solid fa-arrow-up"></i>
           </button>
-          <button class="btn btn-icon" title="Move down in overall order" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
+          <button class="btn btn-icon" title="${isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Move down in overall order"}" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', 1)" ${(isLast || isSortDisabled) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}>
             <i class="fa-solid fa-arrow-down"></i>
           </button>
         `}
@@ -1506,6 +1430,12 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
 function handleDragStart(e, animeTitle, sourceCatId) {
   if (state.isSelectionMode) {
     e.preventDefault();
+    return;
+  }
+  const isAllView = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+  if (isAllView && state.watchlistAllSort && state.watchlistAllSort !== 'default') {
+    e.preventDefault();
+    showToast("Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder.", "warning");
     return;
   }
   state.draggedAnime = animeTitle;
@@ -1570,14 +1500,11 @@ async function handleCardDrop(e, targetTitle, targetCatId, card) {
   if (!sourceTitle || !targetTitle) return;
   if (sourceTitle.toLowerCase().trim() === targetTitle.toLowerCase().trim()) return;
 
-  // If in "All" view with active automatic sort, switch to default category order
-  if (state.watchlistAllSort && state.watchlistAllSort !== 'default') {
-    state.watchlistAllSort = 'default';
-    try {
-      localStorage.setItem('anix_watchlist_all_sort', 'default');
-      const sortSelect = document.getElementById('watchlist-all-sort');
-      if (sortSelect) sortSelect.value = 'default';
-    } catch (err) {}
+  // If in "All" view with active sort other than default, block reorder
+  const isAllView = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+  if (isAllView && state.watchlistAllSort && state.watchlistAllSort !== 'default') {
+    showToast("Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder.", "warning");
+    return;
   }
 
   const rect = card.getBoundingClientRect();
@@ -1735,17 +1662,11 @@ async function batchReorderSelectedAnime(direction, targetCategoryId = null) {
     return;
   }
 
-  // If automatic sort (like A-Z or Popularity) was active, reset to default category order
-  if (state.watchlistAllSort && state.watchlistAllSort !== 'default') {
-    state.watchlistAllSort = 'default';
-    try {
-      localStorage.setItem('anix_watchlist_all_sort', 'default');
-      const sortSelect = document.getElementById('watchlist-all-sort');
-      if (sortSelect) sortSelect.value = 'default';
-    } catch (e) {}
-  }
-
   const isAllView = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+  if (isAllView && !targetCategoryId && state.watchlistAllSort && state.watchlistAllSort !== 'default') {
+    showToast("Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder.", "warning");
+    return;
+  }
   const sortedCats = [...state.userWatchlist.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
 
   let anyMoved = false;
@@ -1989,14 +1910,10 @@ window.reorderAnimeInCat = reorderAnimeInCat;
 async function reorderAnimeInAllView(animeTitle, direction) {
   if (!state.userWatchlist || !state.userWatchlist.categories || !animeTitle) return;
 
-  // If automatic sorting was active, switch to default category order
+  // If automatic sorting is active, block reorder
   if (state.watchlistAllSort && state.watchlistAllSort !== 'default') {
-    state.watchlistAllSort = 'default';
-    try {
-      localStorage.setItem('anix_watchlist_all_sort', 'default');
-      const sortSelect = document.getElementById('watchlist-all-sort');
-      if (sortSelect) sortSelect.value = 'default';
-    } catch (err) {}
+    showToast("Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder.", "warning");
+    return;
   }
 
   // Sorted categories by order
@@ -3055,6 +2972,15 @@ async function renderBrowseView() {
       }
     }
 
+    // Populate browse-user-select dropdown
+    const userSelect = document.getElementById('browse-user-select');
+    if (userSelect && state.communityUsers) {
+      userSelect.innerHTML = state.communityUsers.map(user => {
+        const isMe = Boolean(state.currentUser && user._id === state.currentUser._id);
+        return `<option value="${escapeAttr(user._id)}">${escapeHtml(user.username)}${isMe ? ' (You)' : ''}</option>`;
+      }).join('');
+    }
+
     // Auto-select user based on URL, state, or first available user
     let targetUserId = null;
     if (state.urlBrowseUser) {
@@ -3082,16 +3008,25 @@ async function renderBrowseView() {
   }
 }
 
+function handleBrowseUserSelect(userId) {
+  if (!userId) return;
+  state.browseActiveCategoryFilter = 'all';
+  loadBrowseUserProfile(userId, 'all');
+}
+window.handleBrowseUserSelect = handleBrowseUserSelect;
+
 async function loadBrowseUserProfile(userId, targetCat = null) {
   if (!userId) return;
   state.browseSelectedUserId = userId;
 
-  // Highlight card in directory grid
-  document.querySelectorAll('.user-dir-card').forEach(card => {
-    card.classList.toggle('active', card.getAttribute('data-user-id') === userId);
-  });
+  // Sync browse-user-select dropdown value
+  const userSelect = document.getElementById('browse-user-select');
+  if (userSelect && userSelect.value !== userId) {
+    userSelect.value = userId;
+  }
 
-  document.getElementById('browse-empty-state').classList.add('hidden');
+  const emptyState = document.getElementById('browse-empty-state');
+  if (emptyState) emptyState.classList.add('hidden');
 
   try {
     const data = await apiRequest(`/api/watchlist/${userId}`);
@@ -3103,20 +3038,7 @@ async function loadBrowseUserProfile(userId, targetCat = null) {
       state.browseActiveCategoryFilter = targetCat;
     }
 
-    // Show profile header
-    const header = document.getElementById('browse-profile-header');
-    header.classList.remove('hidden');
-    document.getElementById('browse-profile-username').textContent = user.username;
-
-    // Count total watched
-    let totalWatched = 0;
-    if (watchlist.categories) {
-      watchlist.categories.forEach(c => totalWatched += (c.animes ? c.animes.length : 0));
-    }
-    document.getElementById('browse-profile-meta').textContent = 
-      `Total Watched: ${totalWatched} Anime across ${watchlist.categories?.length || 0} Categories`;
-
-    // Compare with me button
+    // Compare with me button (hidden if viewing oneself)
     const compareBtn = document.getElementById('browse-compare-btn');
     if (compareBtn) {
       if (userId !== state.currentUser._id) {
@@ -3124,6 +3046,12 @@ async function loadBrowseUserProfile(userId, targetCat = null) {
       } else {
         compareBtn.classList.add('hidden');
       }
+    }
+
+    // Count total watched
+    let totalWatched = 0;
+    if (watchlist.categories) {
+      watchlist.categories.forEach(c => totalWatched += (c.animes ? c.animes.length : 0));
     }
 
     // Render Browse Categories Sub-Header (Categories as Headers)
@@ -3202,6 +3130,17 @@ function renderBrowseSubHeader(user, watchlist, totalWatched) {
     chip.onclick = () => filterBrowseCategory(cat._id);
     container.appendChild(chip);
   });
+
+  // Mobile category dropdown for browse view
+  const mobileBrowseSelect = document.getElementById('mobile-browse-category-select');
+  if (mobileBrowseSelect) {
+    let optionsHtml = `<option value="all" ${isAllActive ? 'selected' : ''}>📂 All Categories (${totalWatched})</option>`;
+    sortedCats.forEach(cat => {
+      const isCatActive = isBrowseCategoryActive(cat);
+      optionsHtml += `<option value="${escapeAttr(cat._id)}" ${isCatActive ? 'selected' : ''}>📁 ${escapeHtml(cat.categoryName)} (${cat.animes ? cat.animes.length : 0})</option>`;
+    });
+    mobileBrowseSelect.innerHTML = optionsHtml;
+  }
 }
 
 function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
@@ -3296,44 +3235,33 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
   }
 
   // SINGLE CATEGORY FILTER VIEW:
-  // Show only images belonging to the selected category header
+  // Show only images belonging to the selected category (directly in grid, no duplicate category header)
   const matchedCats = sortedCats.filter(c => isBrowseCategoryActive(c));
   const displayedCats = matchedCats.length > 0 ? matchedCats : sortedCats;
 
   displayedCats.forEach((cat) => {
-    const catBlock = document.createElement('div');
-    catBlock.className = 'category-block';
+    const displayedAnimes = cat.animes || [];
 
-    catBlock.innerHTML = `
-      <div class="category-header">
-        <div class="category-title-wrap">
-          <i class="fa-solid fa-folder-open text-highlight"></i>
-          <h3 class="category-title">${escapeHtml(cat.categoryName)}</h3>
-          <span class="category-count">${cat.animes ? cat.animes.length : 0} anime</span>
-        </div>
-        <span class="badge badge-readonly"><i class="fa-solid fa-eye"></i> Read Only</span>
-      </div>
-      <div class="category-body">
-        <div class="anime-grid" id="browse-cat-${cat._id}"></div>
-      </div>
-    `;
-
-    const grid = catBlock.querySelector(`#browse-cat-${cat._id}`);
-
-    if (!cat.animes || cat.animes.length === 0) {
-      grid.parentElement.innerHTML = `
-        <div class="empty-category-notice">
-          <p>No anime in this category.</p>
+    if (displayedAnimes.length === 0) {
+      container.innerHTML = `
+        <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
+          <i class="fa-regular fa-folder-open" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
+          <p style="color: var(--text-muted);">No anime in "${escapeHtml(cat.categoryName)}".</p>
         </div>
       `;
-    } else {
-      cat.animes.forEach((animeTitle, idx) => {
-        const card = createBrowseAnimeCard(animeTitle, idx, null);
-        grid.appendChild(card);
-      });
+      return;
     }
 
-    container.appendChild(catBlock);
+    const grid = document.createElement('div');
+    grid.className = 'anime-grid single-category-grid';
+    grid.id = `browse-cat-${cat._id}`;
+
+    displayedAnimes.forEach((animeTitle, idx) => {
+      const card = createBrowseAnimeCard(animeTitle, idx, null);
+      grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
   });
 
   triggerGridRowAlignment();
@@ -3498,12 +3426,14 @@ function renderCompareResults() {
   summaryBar.classList.remove('hidden');
 
   headline.textContent = `${data.destinationUser.username} has watched ${data.diffCount} anime that ${data.sourceUser.username} hasn't seen!`;
-  sub.textContent = `Comparison: Source has watched ${data.sourceUser.totalWatched} anime | Destination has watched ${data.destinationUser.totalWatched} anime`;
+  sub.textContent = `${data.sourceUser.username} has watched ${data.sourceUser.totalWatched} anime | ${data.destinationUser.username} has watched ${data.destinationUser.totalWatched} anime`;
 
   // Sort Diff Animes
   let sortedDiff = [...data.diffAnimes];
   const sortType = sortSelect.value;
-  if (sortType === 'alpha-asc') {
+  if (sortType === 'destination-rank') {
+    sortedDiff.sort((a, b) => (a.destRank || 0) - (b.destRank || 0));
+  } else if (sortType === 'alpha-asc') {
     sortedDiff.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
   } else if (sortType === 'alpha-desc') {
     sortedDiff.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
@@ -3539,15 +3469,18 @@ function renderCompareResults() {
     card.innerHTML = `
       <div class="card-poster-wrap">
         <img class="card-poster" src="${meta ? meta.imageUrl : item.imageUrl}" alt="${escapeAttr(item.title)}" loading="lazy" onload="triggerGridRowAlignment()" onerror="this.src='/images/Naruto.jpg'; triggerGridRowAlignment();">
+        ${item.destRank ? `
+          <div class="order-badge" title="${escapeAttr(data.destinationUser.username)}'s Rank #${item.destRank}">#${item.destRank}</div>
+        ` : ''}
         <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeAttr(item.title)}')">
-          <i class="fa-solid fa-fire"></i> ${popCount} users
+          <i class="fa-solid fa-fire"></i> ${popCount}
         </div>
         <div class="copy-hover-badge"><i class="fa-regular fa-copy"></i> Click to copy</div>
       </div>
       <div class="card-content">
         <h4 class="anime-title" title="${escapeAttr(item.title)}">${escapeHtml(item.title)}</h4>
         <div class="card-meta">
-          <span class="text-highlight"><i class="fa-solid fa-folder"></i> In "${escapeHtml(item.destCategory)}"</span>
+          <span class="text-highlight"><i class="fa-solid fa-folder"></i> In "${escapeHtml(item.destCategory)}"${item.destCatRank ? ` (#${item.destCatRank})` : ''}</span>
         </div>
         ${isSourceCurrentUser ? `
           <div class="card-actions">
@@ -3680,13 +3613,13 @@ async function showAnimeWatchersModal(animeTitle) {
               </div>
               <div style="margin-top: 0.2rem;">
                 <span class="watcher-rank-tag">
-                  <i class="fa-solid fa-trophy"></i> Rank #${w.rank || 1}
+                  <i class="fa-solid fa-trophy"></i> #${w.rank || 1}
                 </span>
               </div>
             </div>
           </div>
-          <button class="btn btn-outline btn-sm" onclick="closeModal('modal-watchers'); inspectUserWatchlist('${w.userId}')" title="View ${escapeAttr(w.username)}'s watchlist">
-            <i class="fa-solid fa-eye"></i> View Profile
+          <button class="btn btn-outline btn-sm btn-icon" onclick="closeModal('modal-watchers'); inspectUserWatchlist('${w.userId}')" title="View ${escapeAttr(w.username)}'s watchlist" aria-label="View Profile">
+            <i class="fa-solid fa-eye"></i>
           </button>
         </div>
       `;
@@ -3714,6 +3647,448 @@ function inspectUserWatchlist(userId) {
 // Attach to window object for reliable inline event invocation
 window.showAnimeWatchersModal = showAnimeWatchersModal;
 window.inspectUserWatchlist = inspectUserWatchlist;
+
+// ==========================================
+// COPY DISPLAYED ANIME LIST
+// ==========================================
+function copyAllDisplayedAnimeNames() {
+  let activeContainer = null;
+  let viewDesc = 'anime list';
+
+  if (state.currentView === 'watchlist') {
+    activeContainer = document.getElementById('categories-container');
+    const isAll = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+    if (isAll) {
+      viewDesc = 'watchlist (All Categories)';
+    } else {
+      const activeCat = state.userWatchlist?.categories?.find(c => isCategoryActive(c));
+      viewDesc = activeCat ? `watchlist (${activeCat.categoryName})` : 'category watchlist';
+    }
+  } else if (state.currentView === 'unwatched') {
+    activeContainer = document.getElementById('unwatched-grid');
+    viewDesc = 'Not Watched list';
+  } else if (state.currentView === 'browse') {
+    activeContainer = document.getElementById('browse-categories-container');
+    const user = state.communityUsers?.find(u => u._id === state.browseSelectedUserId);
+    const isAll = !state.browseActiveCategoryFilter || state.browseActiveCategoryFilter === 'all';
+    if (user) {
+      viewDesc = `${user.username}'s ${isAll ? 'watchlist' : 'category'}`;
+    } else {
+      viewDesc = "friend's watchlist";
+    }
+  } else if (state.currentView === 'compare') {
+    activeContainer = document.getElementById('compare-results-container');
+    viewDesc = 'compared anime';
+  }
+
+  if (!activeContainer) {
+    showToast('No anime list available to copy.', 'warning');
+    return;
+  }
+
+  const isSelectionActive = (state.currentView === 'watchlist' && state.isSelectionMode && state.selectedAnimes.size > 0) ||
+                            (state.currentView === 'unwatched' && state.isSelectionMode && state.selectedAnimes.size > 0);
+  if (isSelectionActive) {
+    viewDesc = `selected ${state.selectedAnimes.size} anime`;
+  }
+
+  const cards = Array.from(activeContainer.querySelectorAll('.anime-card'));
+  const titles = [];
+
+  cards.forEach(card => {
+    if (card.offsetParent !== null || window.getComputedStyle(card).display !== 'none') {
+      const title = card.getAttribute('data-anime-title') ||
+                    card.querySelector('.anime-title')?.textContent?.trim();
+      if (title) {
+        if (isSelectionActive) {
+          if (state.selectedAnimes.has(title) || card.classList.contains('selected')) {
+            titles.push(title);
+          }
+        } else {
+          titles.push(title);
+        }
+      }
+    }
+  });
+
+  if (titles.length === 0) {
+    showToast('No anime titles currently displayed to copy.', 'warning');
+    return;
+  }
+
+  const textToCopy = titles.join('\n');
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      showToast(`Copied ${titles.length} anime title${titles.length === 1 ? '' : 's'} (${viewDesc}) to clipboard!`, 'success', 2800);
+    }).catch(() => {
+      fallbackCopyText(textToCopy, titles.length, viewDesc);
+    });
+  } else {
+    fallbackCopyText(textToCopy, titles.length, viewDesc);
+  }
+}
+
+function fallbackCopyText(text, count, desc) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-999999px';
+    ta.style.top = '-999999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast(`Copied ${count} anime title${count === 1 ? '' : 's'} (${desc}) to clipboard!`, 'success', 2800);
+  } catch (err) {
+    console.error('Fallback copy failed:', err);
+    showToast('Failed to copy list to clipboard.', 'error');
+  }
+}
+
+window.copyAllDisplayedAnimeNames = copyAllDisplayedAnimeNames;
+
+// ==========================================
+// BROWSE USERS MODAL SELECTOR
+// ==========================================
+function openBrowseUserSelectModal() {
+  const modal = document.getElementById('modal-browse-users');
+  if (!modal) return;
+
+  const searchInput = document.getElementById('browse-users-modal-search');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+
+  renderBrowseUsersModalList();
+  modal.classList.remove('hidden');
+
+  if (searchInput) {
+    setTimeout(() => searchInput.focus(), 80);
+  }
+}
+
+function closeBrowseUserSelectModal() {
+  const modal = document.getElementById('modal-browse-users');
+  if (modal) modal.classList.add('hidden');
+}
+
+function filterBrowseUsersModalList() {
+  const searchInput = document.getElementById('browse-users-modal-search');
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  renderBrowseUsersModalList(query);
+}
+
+function renderBrowseUsersModalList(filterText = '') {
+  const listEl = document.getElementById('browse-users-modal-list');
+  if (!listEl) return;
+
+  let users = state.communityUsers || [];
+  if (filterText) {
+    users = users.filter(u => u.username.toLowerCase().includes(filterText));
+  }
+
+  if (users.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
+        <i class="fa-solid fa-user-xmark" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.5;"></i>
+        <p>No community members found matching "${escapeHtml(filterText)}".</p>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = users.map(user => {
+    const isMe = Boolean(state.currentUser && user._id === state.currentUser._id);
+    const isSelected = state.browseSelectedUserId === user._id;
+
+    return `
+      <div class="browse-modal-user-item ${isSelected ? 'selected' : ''}" onclick="selectBrowseUser('${user._id}')">
+        <div class="browse-modal-user-left">
+          <div class="browse-modal-user-avatar">
+            <i class="fa-solid fa-user-ninja"></i>
+          </div>
+          <div class="browse-modal-user-info">
+            <div class="browse-modal-user-name">
+              <span>${escapeHtml(user.username)}</span>
+              ${isMe ? '<span class="user-dir-you-badge">You</span>' : ''}
+              ${isSelected ? '<span class="badge badge-accent" style="font-size: 0.65rem; padding: 1px 6px;">Viewing</span>' : ''}
+            </div>
+            <div class="browse-modal-user-meta">
+              <span><i class="fa-solid fa-film"></i> ${user.totalWatched || 0} watched</span>
+              <span>•</span>
+              <span><i class="fa-solid fa-folder"></i> ${user.totalCategories || 0} categories</span>
+            </div>
+          </div>
+        </div>
+        <div class="browse-modal-user-action">
+          <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}">
+            ${isSelected ? '<i class="fa-solid fa-check"></i> Selected' : '<i class="fa-solid fa-arrow-right"></i> View'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectBrowseUser(userId) {
+  closeBrowseUserSelectModal();
+  state.browseActiveCategoryFilter = 'all';
+  loadBrowseUserProfile(userId, 'all');
+}
+
+window.openBrowseUserSelectModal = openBrowseUserSelectModal;
+window.closeBrowseUserSelectModal = closeBrowseUserSelectModal;
+window.filterBrowseUsersModalList = filterBrowseUsersModalList;
+window.selectBrowseUser = selectBrowseUser;
+
+// ==========================================
+// MODAL STATE SYNCHRONIZATION (HIDE SELECTION BAR ON POPUP)
+// ==========================================
+function syncModalOpenState() {
+  const hasOpenModal = Boolean(document.querySelector('.modal-overlay:not(.hidden)'));
+  document.body.classList.toggle('modal-open', hasOpenModal);
+}
+
+try {
+  const modalObserver = new MutationObserver(() => syncModalOpenState());
+  modalObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+} catch (e) {
+  console.warn('MutationObserver not supported:', e);
+}
+
+// ==========================================
+// REORDER CATEGORIES MODAL (FOR MOBILE & TOUCH)
+// ==========================================
+function openReorderCategoriesModal() {
+  const modal = document.getElementById('modal-reorder-categories');
+  if (!modal) return;
+  renderReorderCategoriesList();
+  modal.classList.remove('hidden');
+  syncModalOpenState();
+}
+
+function renderReorderCategoriesList() {
+  const listEl = document.getElementById('reorder-categories-modal-list');
+  if (!listEl) return;
+
+  const cats = [...(state.userWatchlist?.categories || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  if (cats.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+        <p>No categories found to reorder.</p>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = cats.map((cat, idx) => {
+    const isFirst = idx === 0;
+    const isLast = idx === cats.length - 1;
+    const animeCount = cat.animes ? cat.animes.length : 0;
+
+    return `
+      <div class="reorder-category-item" data-cat-id="${escapeAttr(cat._id)}">
+        <div class="reorder-category-left">
+          <span class="reorder-cat-pos">#${idx + 1}</span>
+          <div class="reorder-cat-info">
+            <span class="reorder-cat-name">${escapeHtml(cat.categoryName)}</span>
+            <span class="reorder-cat-count">${animeCount} anime</span>
+          </div>
+        </div>
+        <div class="reorder-category-actions">
+          <button class="btn btn-icon btn-sm btn-outline reorder-up-btn" onclick="handleReorderCategoryClick('${cat._id}', -1)" title="Move Up" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
+            <i class="fa-solid fa-arrow-up"></i>
+          </button>
+          <button class="btn btn-icon btn-sm btn-outline reorder-down-btn" onclick="handleReorderCategoryClick('${cat._id}', 1)" title="Move Down" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
+            <i class="fa-solid fa-arrow-down"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function handleReorderCategoryClick(categoryId, direction) {
+  await reorderCategory(categoryId, direction);
+  renderReorderCategoriesList();
+}
+
+window.openReorderCategoriesModal = openReorderCategoriesModal;
+window.handleReorderCategoryClick = handleReorderCategoryClick;
+
+// ==========================================
+// MILESTONE CELEBRATORY NOTIFICATIONS
+// ==========================================
+let stateNotifications = [];
+
+async function fetchNotifications() {
+  if (!state.currentUser) return;
+  try {
+    const res = await apiRequest('/api/notifications');
+    stateNotifications = res.notifications || [];
+    updateNotificationBadge(res.unreadCount || 0);
+  } catch (err) {
+    console.warn('Failed to fetch notifications:', err);
+  }
+}
+
+function updateNotificationBadge(unreadCount) {
+  const badge = document.getElementById('nav-notif-badge');
+  if (!badge) return;
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function openNotificationsModal() {
+  const modal = document.getElementById('modal-notifications');
+  if (!modal) return;
+
+  await fetchNotifications();
+  renderNotificationsList();
+  modal.classList.remove('hidden');
+  syncModalOpenState();
+
+  // Mark all as read
+  try {
+    await apiRequest('/api/notifications/mark-read', { method: 'POST' });
+    updateNotificationBadge(0);
+  } catch (err) {
+    console.warn('Failed to mark notifications read:', err);
+  }
+}
+
+const stateExpandedLikedBy = new Set();
+
+function toggleLikedByDrawer(notifId) {
+  const drawer = document.getElementById(`liked-by-drawer-${notifId}`);
+  const chevron = document.getElementById(`notif-chevron-${notifId}`);
+  if (!drawer) return;
+
+  const isHidden = drawer.classList.contains('hidden');
+  if (isHidden) {
+    drawer.classList.remove('hidden');
+    stateExpandedLikedBy.add(notifId);
+    if (chevron) chevron.classList.add('rotate-180');
+  } else {
+    drawer.classList.add('hidden');
+    stateExpandedLikedBy.delete(notifId);
+    if (chevron) chevron.classList.remove('rotate-180');
+  }
+}
+window.toggleLikedByDrawer = toggleLikedByDrawer;
+
+function renderNotificationsList() {
+  const listEl = document.getElementById('notifications-modal-list');
+  if (!listEl) return;
+
+  if (stateNotifications.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
+        <i class="fa-solid fa-trophy" style="font-size: 2.5rem; margin-bottom: 0.75rem; opacity: 0.4;"></i>
+        <h4 style="color: #fff; margin-bottom: 0.35rem;">No Milestone Notifications Yet</h4>
+        <p style="font-size: 0.85rem;">When community members reach multiples of 25 completed anime (25, 50, 75, 100+), celebratory milestone notifications will appear here!</p>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = stateNotifications.map(n => {
+    const timeAgo = formatTimeAgo(n.createdAt);
+    const isLiked = n.likedByMe;
+    const likesCount = n.likesCount || 0;
+    const likedUsers = Array.isArray(n.likedByUsers) ? n.likedByUsers : [];
+    const isExpanded = stateExpandedLikedBy.has(n._id);
+
+    return `
+      <div class="notification-card glass-card ${!n.isRead ? 'unread' : ''}" data-notif-id="${n._id}">
+        <div class="notif-card-header">
+          <div class="notif-badge-milestone">
+            <i class="fa-solid fa-trophy"></i>
+            <span>${n.milestone}</span>
+          </div>
+          <div class="notif-card-main">
+            <div class="notif-message">
+              <strong>${escapeHtml(n.username)}</strong> has completed <strong>${n.milestone}</strong> animes!
+            </div>
+            <div class="notif-time">${timeAgo}</div>
+          </div>
+        </div>
+
+        <div class="notif-card-footer">
+          <button class="btn btn-sm ${isLiked ? 'btn-danger' : 'btn-outline'} notif-like-btn" onclick="toggleLikeNotification('${n._id}')" title="${isLiked ? 'Unlike' : 'Like'} this milestone">
+            <i class="fa-${isLiked ? 'solid' : 'regular'} fa-heart"></i>
+            <span class="like-count">${likesCount}</span>
+          </button>
+          ${likesCount > 0 ? `
+            <button class="notif-liked-by-btn" onclick="toggleLikedByDrawer('${n._id}')" title="Click to view who liked">
+              <i class="fa-solid fa-heart text-accent"></i>
+              <span>Liked by ${likesCount}</span>
+              <i class="fa-solid fa-chevron-down notif-chevron ${isExpanded ? 'rotate-180' : ''}" id="notif-chevron-${n._id}"></i>
+            </button>
+          ` : '<span class="notif-liked-by-empty">0 likes</span>'}
+        </div>
+
+        <div id="liked-by-drawer-${n._id}" class="notif-liked-by-drawer ${isExpanded && likesCount > 0 ? '' : 'hidden'}">
+          <div class="liked-by-drawer-title"><i class="fa-solid fa-heart"></i> Liked by (${likesCount})</div>
+          <div class="liked-by-users-list">
+            ${likedUsers.map(u => `
+              <div class="liked-by-user-row">
+                <div class="liked-by-avatar">${escapeHtml((u || '?').charAt(0).toUpperCase())}</div>
+                <span class="liked-by-username">${escapeHtml(u)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function toggleLikeNotification(notifId) {
+  try {
+    const res = await apiRequest(`/api/notifications/${notifId}/like`, { method: 'POST' });
+    const notif = stateNotifications.find(n => n._id === notifId);
+    if (notif) {
+      notif.likedByMe = res.likedByMe;
+      notif.likesCount = res.likesCount;
+      notif.likedByUsers = res.likedByUsers;
+      if (res.likesCount === 0) {
+        stateExpandedLikedBy.delete(notifId);
+      }
+    }
+    renderNotificationsList();
+  } catch (err) {
+    showToast(err.message || 'Failed to update like status.', 'error');
+  }
+}
+
+function formatTimeAgo(dateStr) {
+  if (!dateStr) return '';
+  const now = new Date();
+  const past = new Date(dateStr);
+  const diffMs = now - past;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return past.toLocaleDateString();
+}
+
+window.openNotificationsModal = openNotificationsModal;
+window.toggleLikeNotification = toggleLikeNotification;
+window.fetchNotifications = fetchNotifications;
 
 // ==========================================
 // IMPORT WATCHLIST LOGIC
@@ -4497,6 +4872,13 @@ function initKeyboardShortcuts() {
     if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
       e.preventDefault();
       openImportModal();
+      return;
+    }
+
+    // l -> Copy displayed anime names in UI order to clipboard
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+      e.preventDefault();
+      copyAllDisplayedAnimeNames();
       return;
     }
 

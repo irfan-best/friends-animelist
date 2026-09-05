@@ -407,11 +407,24 @@ body {
 .nav-container {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.nav-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
+  width: 100%;
+}
+
+.nav-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 .nav-brand {
@@ -420,6 +433,8 @@ body {
   gap: 0.75rem;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .logo-box {
   width: 38px;
@@ -432,10 +447,12 @@ body {
   color: #fff;
   font-size: 1.2rem;
   box-shadow: 0 4px 12px var(--accent-glow);
+  flex-shrink: 0;
 }
 .brand-text {
   display: flex;
   flex-direction: column;
+  white-space: nowrap;
 }
 .brand-name {
   font-family: var(--font-display);
@@ -444,6 +461,7 @@ body {
   letter-spacing: 1.5px;
   color: #fff;
   line-height: 1.1;
+  white-space: nowrap;
 }
 .brand-sub {
   font-size: 0.7rem;
@@ -1096,8 +1114,8 @@ body {
 .anime-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 1.5rem 1.25rem;
-  align-items: stretch;
+  gap: 1.75rem 1.25rem;
+  align-items: start;
 }
 
 .anime-card {
@@ -1112,7 +1130,8 @@ body {
   box-shadow: var(--shadow-sm);
   cursor: pointer;
   user-select: none;
-  height: 100%;
+  height: fit-content;
+  align-self: start;
 }
 
 .anime-card:hover {
@@ -1238,18 +1257,14 @@ body {
   width: 100%;
   overflow: hidden;
   background: #0f131d;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
+  display: block;
 }
 
 .card-poster {
   width: 100%;
   height: auto;
   display: block;
-  object-fit: contain;
+  object-fit: cover;
   transition: transform 0.4s ease;
 }
 .anime-card:hover .card-poster {
@@ -1428,7 +1443,7 @@ body {
   padding: 0.65rem 0.8rem;
   display: flex;
   flex-direction: column;
-  margin-top: auto;
+  margin-top: 0;
   flex-shrink: 0;
   width: 100%;
 }
@@ -1465,7 +1480,7 @@ body.is-irfan-yoichi .anime-title:hover {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin-top: auto;
+  margin-top: 0.5rem;
   padding-top: 0.4rem;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -1737,25 +1752,31 @@ body.is-irfan-yoichi .anime-title:hover {
 /* ==========================================================================
    FLOATING SELECTION ACTION BAR
    ========================================================================== */
+/* Hide selection controls immediately whenever any popup modal is open */
+body.modal-open #floating-selection-bar,
+body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
+  display: none !important;
+}
+
 .floating-selection-bar {
   position: fixed;
-  bottom: 2rem;
+  bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1.25rem;
-  padding: 0.75rem 1.35rem;
-  background: rgba(18, 24, 38, 0.94);
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.85rem;
+  background: rgba(18, 24, 38, 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(6, 182, 212, 0.5);
   border-radius: var(--radius-xl);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(6, 182, 212, 0.25);
   animation: slideUpBar 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  max-width: 90vw;
+  max-width: 95vw;
   flex-wrap: wrap;
 }
 
@@ -1770,30 +1791,30 @@ body.is-irfan-yoichi .anime-title:hover {
   }
 }
 
-.selection-bar-left {
+.selection-bar-row {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .selection-count-pill {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
+  gap: 0.35rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--secondary);
   background: rgba(6, 182, 212, 0.12);
-  padding: 0.35rem 0.8rem;
+  padding: 0.3rem 0.6rem;
   border-radius: 20px;
   border: 1px solid rgba(6, 182, 212, 0.3);
+  white-space: nowrap;
 }
 
-.selection-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+.selection-bar-row .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Empty States */
@@ -2193,6 +2214,167 @@ body.is-irfan-yoichi .anime-title:hover {
   flex-shrink: 0;
 }
 
+/* Mobile Navigation & Category Select Wrappers (Hidden by default on desktop) */
+.mobile-nav-select-wrap {
+  display: none;
+  width: 100%;
+}
+
+.mobile-cat-select-wrap {
+  display: none;
+  width: 100%;
+}
+
+.mobile-nav-select,
+.mobile-cat-select {
+  width: 100%;
+  font-size: 0.95rem;
+  padding: 0.65rem 1rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  padding-right: 2.5rem;
+}
+
+.mobile-nav-select:focus,
+.mobile-cat-select:focus {
+  border-color: var(--secondary);
+  outline: none;
+}
+
+/* Copy List Button */
+.btn-copy-all-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Remove red shadow on + button */
+#btn-open-category-modal {
+  box-shadow: none !important;
+  outline: none !important;
+}
+#btn-open-category-modal:hover {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Browse User Selector Bar */
+.browse-user-selector-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius-lg);
+  width: 100%;
+}
+
+.browse-selector-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.browse-user-dropdown-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 250px;
+  min-width: 140px;
+}
+
+.browse-select-label {
+  color: var(--secondary);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+}
+
+.browse-user-select {
+  flex: 1;
+  width: auto;
+  min-width: 120px;
+}
+
+/* Not Watched Controls Bar: Centered and Full Width */
+.unwatched-controls-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.unwatched-search-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.unwatched-search-box {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.unwatched-controls-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.unwatched-controls-group .sorting-box {
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.unwatched-controls-group .sorting-box .select-dropdown {
+  width: 100%;
+}
+
+.unwatched-controls-group .btn {
+  flex: 0 1 auto;
+}
+
+/* Card action buttons single line */
+.card-actions .btn {
+  white-space: nowrap;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.5rem;
+}
+
+/* Prevent dropdown value trimming */
+.select-dropdown,
+.mobile-nav-select,
+.mobile-cat-select,
+.browse-user-select {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 /* ==========================================================================
    RESPONSIVE DESIGN
    ========================================================================== */
@@ -2201,25 +2383,6 @@ body.is-irfan-yoichi .anime-title:hover {
     flex-direction: column;
     align-items: stretch;
     gap: 0.75rem;
-  }
-  .sub-header-toolbar,
-  .sub-header-right {
-    justify-content: flex-start;
-    padding-top: 0.25rem;
-  }
-  .nav-container {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-  }
-  .nav-tabs {
-    overflow-x: auto;
-    width: 100%;
-    justify-content: flex-start;
-    padding-bottom: 0.5rem;
-  }
-  .nav-tab span:not(.nav-counter) {
-    white-space: nowrap;
   }
   .compare-selectors-bar {
     flex-direction: column;
@@ -2230,10 +2393,172 @@ body.is-irfan-yoichi .anime-title:hover {
   }
 }
 
+@media (max-width: 768px) {
+  /* Replace top navbar tabs with mobile navigation dropdown */
+  .nav-tabs {
+    display: none !important;
+  }
+  .mobile-nav-select-wrap {
+    display: block;
+    width: 100%;
+  }
+
+  /* Replace category chips with mobile category select dropdown */
+  .sub-header-categories,
+  #sub-header-categories-list,
+  #browse-sub-header-categories-list {
+    display: none !important;
+  }
+  .mobile-cat-select-wrap {
+    display: block;
+    margin-bottom: 0.5rem;
+    width: 100%;
+  }
+
+  /* Dropdown box never trims values on phone */
+  .select-dropdown,
+  .mobile-nav-select,
+  .mobile-cat-select,
+  .browse-user-select {
+    width: 100% !important;
+    max-width: 100% !important;
+    font-size: 0.85rem !important;
+    padding: 0.6rem 2.2rem 0.6rem 0.75rem !important;
+    box-sizing: border-box;
+  }
+
+  /* Search box takes 100% full width even when not focused */
+  .search-box {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  .watchlist-search-box {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Subheader toolbar and buttons aligned at center on mobile */
+  .sub-header-toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100%;
+    gap: 0.6rem;
+  }
+  .sub-header-toolbar-left,
+  .sub-header-toolbar-right {
+    display: flex;
+    justify-content: center !important;
+    align-items: center !important;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  /* "Mark Watched" text stays strictly on a single line */
+  .card-actions .btn {
+    white-space: nowrap !important;
+    font-size: 0.78rem !important;
+    padding: 0.4rem 0.5rem !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Not Watched controls-bar fits screen width, centered and full width */
+  .unwatched-controls-bar {
+    padding: 0.75rem 0.85rem;
+  }
+  .unwatched-controls-group {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 0.6rem;
+  }
+  .unwatched-controls-group .sorting-box {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .unwatched-controls-group .btn {
+    width: 100% !important;
+    justify-content: center;
+  }
+
+  /* Browse selector controls on phone: tight vertical spacing, zero empty padding */
+  .browse-user-selector-bar {
+    padding: 0.4rem 0.65rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+  .browse-selector-controls {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 0.35rem !important;
+  }
+  .browse-user-dropdown-wrap {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    max-width: 220px !important;
+    min-width: 120px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .browse-selector-controls .btn {
+    flex: 0 1 auto !important;
+    width: auto !important;
+    justify-content: center;
+  }
+
+  /* All category sorting dropdown full width on phone when visible */
+  .watchlist-all-sorting:not(.hidden) {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    padding: 0.4rem 0.75rem;
+  }
+  .watchlist-all-sorting.hidden,
+  #watchlist-all-sort-wrap.hidden {
+    display: none !important;
+  }
+  .watchlist-all-sorting .select-dropdown-sm {
+    flex: 1;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 34px;
+    font-size: 0.85rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  /* Compare view summary & sorting on phone */
+  .compare-summary {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.85rem !important;
+    padding: 1rem !important;
+  }
+  .compare-summary .sorting-box {
+    width: 100% !important;
+  }
+  .compare-summary .sorting-box .select-dropdown {
+    width: 100% !important;
+  }
+}
+
 @media (max-width: 600px) {
   .anime-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: 0.85rem;
+    gap: 1.25rem 0.85rem;
+    align-items: start;
+  }
+  .anime-card {
+    height: fit-content;
+    align-self: start;
   }
   .view-header {
     flex-direction: column;
@@ -2247,20 +2572,24 @@ body.is-irfan-yoichi .anime-title:hover {
   .stat-divider {
     display: none;
   }
-  .controls-bar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .search-box {
-    max-width: 100%;
-    min-width: 100%;
-  }
-  .sorting-box {
-    width: 100%;
-    justify-content: space-between;
-  }
   .select-dropdown {
     flex: 1;
+  }
+  /* When showing selection controls on 2 rows: row 1 (count, clear, up, down), row 2 (move, remove, watched, exit) */
+  .floating-selection-bar {
+    flex-direction: column !important;
+    gap: 0.35rem !important;
+    padding: 0.45rem 0.75rem !important;
+    bottom: 1rem !important;
+    border-radius: var(--radius-lg) !important;
+    max-width: 96vw !important;
+  }
+  .selection-bar-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    gap: 0.35rem !important;
   }
 }
 
@@ -2487,4 +2816,330 @@ body.is-irfan-yoichi .anime-title:hover {
 .admin-pw-input:focus {
   border-color: var(--primary);
 }
+
+/* ==========================================================================
+   MOBILE CATEGORY REORDER ROW & MODAL
+   ========================================================================== */
+.mobile-cat-select-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.mobile-cat-select-row .mobile-cat-select {
+  flex: 1;
+}
+
+#btn-mobile-reorder-cats {
+  flex-shrink: 0;
+  height: 40px;
+  width: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+
+.reorder-categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.reorder-category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.85rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  gap: 0.75rem;
+}
+
+.reorder-category-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.reorder-cat-pos {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--secondary);
+  font-size: 0.9rem;
+  min-width: 28px;
+}
+
+.reorder-cat-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.reorder-cat-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reorder-cat-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.reorder-category-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.reorder-category-actions .btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==========================================================================
+   MILESTONE CELEBRATORY NOTIFICATIONS
+   ========================================================================== */
+.btn-notifications {
+  position: relative;
+}
+
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 1px 5px;
+  min-width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 10px var(--accent-glow);
+  border: 1.5px solid var(--bg-surface);
+  line-height: 1;
+}
+
+.notifications-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.notification-card {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: border-color 0.2s, background 0.2s;
+  border: 1px solid var(--border-glass);
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.notification-card.unread {
+  border-color: rgba(244, 63, 94, 0.55);
+  background: rgba(244, 63, 94, 0.08);
+}
+
+.notif-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.notif-badge-milestone {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(244, 63, 94, 0.3));
+  border: 1.5px solid rgba(245, 158, 11, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fbbf24;
+  font-size: 0.725rem;
+  font-weight: 800;
+  line-height: 1;
+  gap: 1px;
+}
+
+.notif-badge-milestone i {
+  font-size: 0.75rem;
+}
+
+.notif-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-message {
+  font-size: 0.9rem;
+  color: #fff;
+  line-height: 1.35;
+}
+
+.notif-message strong {
+  color: var(--secondary);
+}
+
+.notif-time {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.notif-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 0.75rem;
+}
+
+.notif-like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
+.notif-like-btn.btn-danger {
+  background: rgba(244, 63, 94, 0.25);
+  border-color: rgba(244, 63, 94, 0.6);
+  color: #fda4af;
+}
+
+.notif-liked-by-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: var(--text-main);
+  padding: 0.25rem 0.65rem;
+  border-radius: 20px;
+  font-size: 0.775rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.notif-liked-by-btn:hover {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: #fff;
+}
+
+.notif-liked-by-btn .notif-chevron {
+  font-size: 0.65rem;
+  transition: transform 0.2s ease;
+  color: var(--text-dim);
+}
+
+.notif-liked-by-btn .rotate-180 {
+  transform: rotate(180deg);
+}
+
+.notif-liked-by-empty {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.notif-liked-by-drawer {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(10, 14, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-md);
+  animation: fadeIn 0.2s ease;
+}
+
+.liked-by-drawer-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.45rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.liked-by-drawer-title i {
+  color: #f43f5e;
+}
+
+.liked-by-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.liked-by-user-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.liked-by-user-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.liked-by-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.liked-by-username {
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
 

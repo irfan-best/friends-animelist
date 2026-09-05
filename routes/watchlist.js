@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Watchlist = require('../models/Watchlist');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const { authenticateToken } = require('../middleware/auth');
 const { scanAnimeImages } = require('../utils/imageScanner');
 
@@ -19,6 +20,60 @@ async function getOrCreateWatchlist(userId) {
     await watchlist.save();
   }
   return watchlist;
+}
+
+/**
+ * Calculates total unique watched anime count in a watchlist
+ */
+function countTotalWatched(watchlist) {
+  if (!watchlist || !watchlist.categories) return 0;
+  const set = new Set();
+  for (const cat of watchlist.categories) {
+    for (const a of (cat.animes || [])) {
+      if (a) set.add(a.toLowerCase().trim());
+    }
+  }
+  return set.size;
+}
+
+/**
+ * Checks if user crossed any multiple of 25 (25, 50, 75, 100, ...)
+ * and creates celebratory notifications for all users.
+ */
+async function checkAndSendMilestoneNotifications(userId, oldCount, newCount) {
+  try {
+    if (newCount <= oldCount) return;
+    const user = await User.findById(userId).select('username');
+    if (!user) return;
+
+    // Multiples of 25 strictly greater than oldCount and less than or equal to newCount
+    const startK = Math.floor(oldCount / 25) + 1;
+    const endK = Math.floor(newCount / 25);
+    const milestones = [];
+    for (let k = startK; k <= endK; k++) {
+      if (k > 0) {
+        milestones.push(k * 25);
+      }
+    }
+
+    for (const milestone of milestones) {
+      // Avoid duplicate notification if user already reached this milestone before
+      const existing = await Notification.findOne({ userId, milestone });
+      if (!existing) {
+        await Notification.create({
+          userId,
+          username: user.username,
+          milestone,
+          message: `${user.username} has completed ${milestone} animes!`,
+          likes: [],
+          readBy: [userId] // The user who completed it has seen their own milestone
+        });
+        console.log(`[NOTIFICATION] 🎉 Milestone reached: ${user.username} completed ${milestone} animes!`);
+      }
+    }
+  } catch (err) {
+    console.error('Error checking milestone notifications:', err);
+  }
 }
 
 // 4. COMPARISON ROUTE
@@ -59,15 +114,24 @@ router.get('/compare', async (req, res) => {
       }
     }
 
-    // Destination watched titles list with category info
+    // Destination watched titles list with category info and ranks
     const destWatchedTitles = [];
     const destCategoryMap = {};
+    const destRankMap = {};
+    const destCatRankMap = {};
     if (destWatchlist && destWatchlist.categories) {
-      for (const cat of destWatchlist.categories) {
-        for (const anime of cat.animes) {
+      const sortedCats = [...destWatchlist.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+      let overallRank = 1;
+      for (const cat of sortedCats) {
+        let catRank = 1;
+        for (const anime of (cat.animes || [])) {
           if (anime && !destWatchedTitles.includes(anime)) {
             destWatchedTitles.push(anime);
             destCategoryMap[anime] = cat.categoryName;
+            destRankMap[anime] = overallRank;
+            destCatRankMap[anime] = catRank;
+            overallRank++;
+            catRank++;
           }
         }
       }
@@ -85,11 +149,13 @@ router.get('/compare', async (req, res) => {
       imageMap[img.title.toLowerCase()] = img;
     });
 
-    const diffAnimes = diffTitles.map(title => {
+    const diffAnimes = diffTitles.map((title, idx) => {
       const match = imageMap[title.toLowerCase()];
       return {
         title,
         destCategory: destCategoryMap[title] || 'Watched',
+        destRank: destRankMap[title] || (idx + 1),
+        destCatRank: destCatRankMap[title] || 1,
         fileName: match ? match.fileName : `${title}.jpg`,
         imageUrl: match ? match.imageUrl : `/images/${encodeURIComponent(title)}.jpg`
       };
@@ -315,10 +381,17 @@ router.post('/add-anime', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Target category not found.' });
     }
 
+    // Track count before addition
+    const oldCount = countTotalWatched(watchlist);
+
     // Add anime to target category
     targetCategory.animes.push(title);
 
     await watchlist.save();
+
+    // Check if reached a multiple of 25 milestone
+    const newCount = countTotalWatched(watchlist);
+    await checkAndSendMilestoneNotifications(userId, oldCount, newCount);
 
     res.json({
       message: `"${title}" added to "${targetCategory.categoryName}".`,
@@ -397,6 +470,8 @@ router.post('/batch-add', authenticateToken, async (req, res) => {
     const normalizedTitles = animeTitles.map(t => t.trim()).filter(Boolean);
     const titlesSet = new Set(normalizedTitles.map(t => t.toLowerCase()));
 
+    const oldCount = countTotalWatched(watchlist);
+
     // Strict Rule: Remove these animes from all categories first
     for (const cat of watchlist.categories) {
       cat.animes = cat.animes.filter(a => !titlesSet.has(a.toLowerCase().trim()));
@@ -410,6 +485,10 @@ router.post('/batch-add', authenticateToken, async (req, res) => {
     }
 
     await watchlist.save();
+
+    // Check if reached a multiple of 25 milestone
+    const newCount = countTotalWatched(watchlist);
+    await checkAndSendMilestoneNotifications(userId, oldCount, newCount);
 
     res.json({
       message: `Added ${normalizedTitles.length} anime(s) to "${targetCategory.categoryName}".`,
@@ -593,6 +672,7 @@ router.post('/import', authenticateToken, async (req, res) => {
     }
 
     const watchlist = await getOrCreateWatchlist(userId);
+    const oldCount = countTotalWatched(watchlist);
 
     // Validate and clean blocks: [ { categoryName: string, animes: string[] } ]
     const cleanedBlocks = [];
@@ -681,6 +761,10 @@ router.post('/import', authenticateToken, async (req, res) => {
     });
 
     await watchlist.save();
+
+    // Check if reached a multiple of 25 milestone
+    const newCount = countTotalWatched(watchlist);
+    await checkAndSendMilestoneNotifications(userId, oldCount, newCount);
 
     const totalCategories = cleanedBlocks.length;
     let totalAnimes = 0;
