@@ -3658,6 +3658,7 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  margin-right: 15px;
 }
 
 .lb-stats-value {

@@ -5820,7 +5820,6 @@ function renderLeaderboardList(usersList) {
   container.innerHTML = usersList.map((user) => {
     const actualRank = (state.communityUsers || []).findIndex(u => u._id === user._id) + 1;
     const isMe = Boolean(state.currentUser && user._id === state.currentUser._id);
-    const initial = (user.username || 'U').charAt(0).toUpperCase();
 
     let rankBadgeClass = '';
     let rankIcon = '';
@@ -5836,7 +5835,6 @@ function renderLeaderboardList(usersList) {
     }
 
     const pct = Math.round(((user.totalWatched || 0) / maxWatched) * 100);
-    const joinedDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
 
     return `
       <div class="leaderboard-row ${isMe ? 'is-current-user' : ''}">
@@ -5846,14 +5844,10 @@ function renderLeaderboardList(usersList) {
           </div>
         </div>
         <div class="lb-col lb-col-user lb-user-cell">
-          <div class="lb-avatar">${initial}</div>
-          <div class="lb-user-details">
-            <span class="lb-username">
-              ${escapeHtml(user.username)}
-              ${isMe ? '<span class="lb-you-badge">You</span>' : ''}
-            </span>
-            ${joinedDate ? `<span class="lb-joined">Member since ${joinedDate}</span>` : ''}
-          </div>
+          <span class="lb-username">
+            ${escapeHtml(user.username)}
+            ${isMe ? '<span class="lb-you-badge">You</span>' : ''}
+          </span>
         </div>
         <div class="lb-col lb-col-stats lb-stats-cell">
           <span class="lb-stats-value">${user.totalWatched || 0} anime</span>
