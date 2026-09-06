@@ -181,6 +181,116 @@ router.get('/compare', async (req, res) => {
   }
 });
 
+// POST /api/watchlist/common -> Find common watched animes across multiple selected users
+router.post('/common', async (req, res) => {
+  try {
+    const { userIds } = req.body;
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length < 2) {
+      return res.status(400).json({ error: 'Please select at least 2 users to find common anime.' });
+    }
+
+    for (const id of userIds) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ error: `Invalid user ID format: ${id}` });
+      }
+    }
+
+    const users = await User.find({ _id: { $in: userIds } }).select('_id username');
+    if (users.length !== userIds.length) {
+      return res.status(404).json({ error: 'One or more selected users not found.' });
+    }
+
+    const watchlists = await Watchlist.find({ userId: { $in: userIds } });
+
+    const userMaps = [];
+    for (const user of users) {
+      const uid = user._id.toString();
+      const wl = watchlists.find(w => w.userId.toString() === uid);
+      const watchedSet = new Set();
+      const titleOriginalMap = {};
+      const categoryMap = {};
+      const rankMap = {};
+
+      if (wl && wl.categories) {
+        const sortedCats = [...wl.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+        let overallRank = 1;
+        for (const cat of sortedCats) {
+          for (const anime of (cat.animes || [])) {
+            if (anime && anime.trim()) {
+              const clean = anime.trim();
+              const key = clean.toLowerCase();
+              if (!watchedSet.has(key)) {
+                watchedSet.add(key);
+                titleOriginalMap[key] = clean;
+                categoryMap[key] = cat.categoryName;
+                rankMap[key] = overallRank;
+                overallRank++;
+              }
+            }
+          }
+        }
+      }
+
+      userMaps.push({
+        user,
+        watchedSet,
+        titleOriginalMap,
+        categoryMap,
+        rankMap
+      });
+    }
+
+    const firstMap = userMaps[0];
+    const commonKeys = [];
+
+    for (const key of firstMap.watchedSet) {
+      let inAll = true;
+      for (let i = 1; i < userMaps.length; i++) {
+        if (!userMaps[i].watchedSet.has(key)) {
+          inAll = false;
+          break;
+        }
+      }
+      if (inAll) {
+        commonKeys.push(key);
+      }
+    }
+
+    const allImages = scanAnimeImages();
+    const imageMap = new Map();
+    allImages.forEach(img => imageMap.set(img.title.toLowerCase().trim(), img));
+
+    const commonAnimes = commonKeys.map(key => {
+      const match = imageMap.get(key);
+      const originalTitle = firstMap.titleOriginalMap[key] || (match ? match.title : key);
+
+      const userBreakdown = userMaps.map(um => ({
+        userId: um.user._id,
+        username: um.user.username,
+        categoryName: um.categoryMap[key] || 'Watched',
+        rank: um.rankMap[key] || null
+      }));
+
+      return {
+        title: originalTitle,
+        fileName: match ? match.fileName : `${originalTitle}.jpg`,
+        imageUrl: match ? match.imageUrl : `/images/${encodeURIComponent(originalTitle)}.jpg`,
+        userBreakdown
+      };
+    });
+
+    res.json({
+      users: users.map(u => ({ _id: u._id, username: u.username })),
+      totalCommon: commonAnimes.length,
+      commonAnimes
+    });
+  } catch (err) {
+    console.error('Error finding common animes:', err);
+    res.status(500).json({ error: 'Failed to find common anime.' });
+  }
+});
+
 // GET /api/watchlist/:userId -> Get specific user's watchlist
 router.get('/:userId', async (req, res) => {
   try {

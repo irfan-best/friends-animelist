@@ -102,30 +102,40 @@ router.get('/watchers', async (req, res) => {
 
         const sortedCats = [...(wl.categories || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
         let rank = null;
-        let currentRank = 0;
+        let runningRank = 0;
 
         for (const cat of sortedCats) {
           if (!cat.animes || !Array.isArray(cat.animes)) continue;
           for (let i = 0; i < cat.animes.length; i++) {
-            currentRank++;
             const aTitle = (cat.animes[i] || '').trim();
-            if (rank === null && aTitle.toLowerCase() === cleanTitle.toLowerCase()) {
-              rank = currentRank;
+            if (aTitle) {
+              runningRank++;
+              if (rank === null && aTitle.toLowerCase() === cleanTitle.toLowerCase()) {
+                rank = runningRank;
+              }
             }
           }
         }
 
+        const totalWatched = runningRank;
+
         watchers.push({
           userId: wl.userId._id,
           username: wl.userId.username,
-          rank: rank !== null ? rank : currentRank || 1
+          rank: rank !== null ? rank : (totalWatched || 1),
+          totalWatched
         });
       }
     }
 
     watchers.sort((a, b) => {
-      if (a.rank !== b.rank) return a.rank - b.rank;
-      return a.username.localeCompare(b.username);
+      const rankA = (a.rank != null) ? a.rank : Infinity;
+      const rankB = (b.rank != null) ? b.rank : Infinity;
+      if (rankA !== rankB) return rankA - rankB; // Ascending rank: #1 before #2
+      const countA = a.totalWatched || 0;
+      const countB = b.totalWatched || 0;
+      if (countB !== countA) return countB - countA; // Tie-breaker: higher total watched first
+      return (a.username || '').localeCompare(b.username || '');
     });
 
     res.json({

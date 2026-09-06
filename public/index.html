@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=4.4">
+  <link rel="stylesheet" href="style.css?v=4.8">
 </head>
 <body class="dark-theme">
 
@@ -205,6 +205,9 @@
           <!-- Dynamically populated categories -->
         </div>
 
+        <!-- Watchlist Pagination Controls -->
+        <div id="watchlist-pagination" class="pagination-container"></div>
+
         <!-- Empty State for No Categories -->
         <div id="watchlist-empty-state" class="empty-state glass-card hidden">
           <div class="empty-icon"><i class="fa-solid fa-inbox"></i></div>
@@ -227,7 +230,7 @@
             <div id="unwatched-search-wrap" class="search-box unwatched-search-box">
               <i class="fa-solid fa-magnifying-glass"></i>
               <span id="unwatched-search-scope-badge" class="search-scope-badge" onclick="toggleUnwatchedSearchScope()" title="Click to toggle Unwatched / Global Search">Unwatched</span>
-              <input type="text" id="unwatched-search" placeholder="Search unwatched" oninput="renderUnwatchedView()">
+              <input type="text" id="unwatched-search" placeholder="Search unwatched" oninput="handleUnwatchedSearchInput()">
               <button id="clear-search-btn" class="clear-btn hidden" onclick="clearUnwatchedSearch()" title="Clear text"><i class="fa-solid fa-xmark"></i></button>
               <button class="close-search-box-btn" onclick="closeUnwatchedSearch()" title="Close search (Esc)"><i class="fa-solid fa-xmark"></i></button>
             </div>
@@ -235,7 +238,7 @@
 
           <div class="controls-group">
             <div class="sorting-box">
-              <select id="unwatched-sort" class="select-dropdown" onchange="renderUnwatchedView()" title="Sort Not Watched">
+              <select id="unwatched-sort" class="select-dropdown" onchange="handleUnwatchedSortChange()" title="Sort Not Watched">
                 <option value="popularity-desc" selected>Populary</option>
                 <option value="alpha-asc">ASC (A-Z)</option>
                 <option value="alpha-desc">DESC (Z-A)</option>
@@ -254,6 +257,9 @@
         <div id="unwatched-grid" class="anime-grid">
           <!-- Dynamically populated anime cards -->
         </div>
+
+        <!-- Unwatched Pagination Controls -->
+        <div id="unwatched-pagination" class="pagination-container"></div>
 
         <!-- Empty Unwatched State -->
         <div id="unwatched-empty-state" class="empty-state glass-card hidden">
@@ -316,6 +322,9 @@
           <!-- Dynamically populated read-only categories -->
         </div>
 
+        <!-- Browse Pagination Controls -->
+        <div id="browse-pagination" class="pagination-container"></div>
+
         <div id="browse-empty-state" class="empty-state glass-card">
           <div class="empty-icon"><i class="fa-solid fa-compass"></i></div>
           <h3>Select a Community Member</h3>
@@ -328,61 +337,124 @@
         <div class="view-header">
           <div class="header-titles">
             <h2 class="view-title"><i class="fa-solid fa-swords"></i> Compare Watchlists</h2>
-            <p class="view-subtitle">Discover anime watched by the Destination User that the Source User hasn't seen yet.</p>
+            <p id="compare-subtitle" class="view-subtitle">Discover anime watched by the Destination User that the Source User hasn't seen yet.</p>
           </div>
         </div>
 
-        <!-- User Selection Dual Pickers -->
-        <div class="compare-selectors-bar glass-card">
-          <div class="compare-picker">
-            <span class="picker-tag source-tag"><i class="fa-solid fa-user"></i> Source</span>
-            <select id="compare-source-select" class="select-dropdown" onchange="runComparison()">
-              <!-- Dynamically populated users -->
-            </select>
-          </div>
-
-          <button class="btn btn-icon swap-btn" onclick="swapCompareUsers()" title="Swap users">
-            <i class="fa-solid fa-right-left"></i>
+        <!-- Compare Modes Switcher -->
+        <div class="compare-mode-nav">
+          <button id="compare-mode-diff-btn" class="compare-mode-tab active" onclick="switchCompareMode('diff')">
+            <i class="fa-solid fa-code-compare"></i> Compare 2 Users
           </button>
-
-          <div class="compare-picker">
-            <span class="picker-tag dest-tag"><i class="fa-solid fa-user-check"></i> Target</span>
-            <select id="compare-dest-select" class="select-dropdown" onchange="runComparison()">
-              <!-- Dynamically populated users -->
-            </select>
-          </div>
+          <button id="compare-mode-common-btn" class="compare-mode-tab" onclick="switchCompareMode('common')">
+            <i class="fa-solid fa-users"></i> Common Anime (Friends)
+          </button>
         </div>
 
-        <!-- Comparison Results Controls & Summary -->
-        <div id="compare-summary-bar" class="compare-summary glass-card hidden">
-          <div class="diff-stats-box">
-            <div class="diff-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-            <div class="diff-text">
-              <h4 id="diff-summary-headline">Recommendations Found</h4>
-              <p id="diff-summary-sub">Detailed diff breakdown</p>
+        <!-- MODE 1: DIFF COMPARISON (2 USERS) -->
+        <div id="compare-diff-panel">
+          <!-- User Selection Dual Pickers -->
+          <div class="compare-selectors-bar glass-card">
+            <div class="compare-picker">
+              <span class="picker-tag source-tag"><i class="fa-solid fa-user"></i> Source</span>
+              <select id="compare-source-select" class="select-dropdown" onchange="runComparison()">
+                <!-- Dynamically populated users -->
+              </select>
+            </div>
+
+            <button class="btn btn-icon swap-btn" onclick="swapCompareUsers()" title="Swap users">
+              <i class="fa-solid fa-right-left"></i>
+            </button>
+
+            <div class="compare-picker">
+              <span class="picker-tag dest-tag"><i class="fa-solid fa-user-check"></i> Target</span>
+              <select id="compare-dest-select" class="select-dropdown" onchange="runComparison()">
+                <!-- Dynamically populated users -->
+              </select>
             </div>
           </div>
 
-          <div class="sorting-box">
-            <select id="compare-sort" class="select-dropdown" onchange="renderCompareResults()" title="Sort Comparison">
-              <option value="destination-rank" selected>Destination Ranking</option>
-              <option value="popularity-desc">Populary</option>
-              <option value="alpha-asc">ASC (A-Z)</option>
-              <option value="alpha-desc">DESC (Z-A)</option>
-            </select>
+          <!-- Comparison Results Controls & Summary -->
+          <div id="compare-summary-bar" class="compare-summary glass-card hidden">
+            <div class="diff-stats-box">
+              <div class="diff-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+              <div class="diff-text">
+                <h4 id="diff-summary-headline">Recommendations Found</h4>
+                <p id="diff-summary-sub">Detailed diff breakdown</p>
+              </div>
+            </div>
+
+            <div class="sorting-box">
+              <select id="compare-sort" class="select-dropdown" onchange="renderCompareResults()" title="Sort Comparison">
+                <option value="destination-rank" selected>Destination Ranking</option>
+                <option value="popularity-desc">Populary</option>
+                <option value="alpha-asc">ASC (A-Z)</option>
+                <option value="alpha-desc">DESC (Z-A)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Comparison Anime Grid -->
+          <div id="compare-grid" class="anime-grid">
+            <!-- Dynamically populated diff cards -->
+          </div>
+
+          <!-- Empty Diff State -->
+          <div id="compare-empty-state" class="empty-state glass-card hidden">
+            <div class="empty-icon"><i class="fa-solid fa-handshake"></i></div>
+            <h3 id="compare-empty-title">Identical or No Watched Anime</h3>
+            <p id="compare-empty-desc">There are no anime titles watched by the destination user that the source user hasn't already seen.</p>
           </div>
         </div>
 
-        <!-- Comparison Anime Grid -->
-        <div id="compare-grid" class="anime-grid">
-          <!-- Dynamically populated diff cards -->
-        </div>
+        <!-- MODE 2: MULTI-FRIEND COMMON ANIME -->
+        <div id="compare-common-panel" class="hidden">
+          <!-- Multi-Friend Selection Panel -->
+          <div class="multi-friend-container glass-card">
+            <div class="multi-friend-header">
+              <div class="multi-friend-title">
+                <i class="fa-solid fa-user-group text-primary"></i> Select Friends to Find Commonly Watched Anime
+              </div>
+              <div class="multi-friend-actions">
+                <button type="button" class="btn btn-sm btn-outline" onclick="selectAllCommonFriends()"><i class="fa-solid fa-check-double"></i> Select All</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="clearAllCommonFriends()"><i class="fa-solid fa-xmark"></i> Clear</button>
+              </div>
+            </div>
+            <div id="common-friends-chips" class="multi-friend-chips">
+              <!-- Dynamically populated friend chips -->
+            </div>
+          </div>
 
-        <!-- Empty Diff State -->
-        <div id="compare-empty-state" class="empty-state glass-card hidden">
-          <div class="empty-icon"><i class="fa-solid fa-handshake"></i></div>
-          <h3 id="compare-empty-title">Identical or No Watched Anime</h3>
-          <p id="compare-empty-desc">There are no anime titles watched by the destination user that the source user hasn't already seen.</p>
+          <!-- Common Anime Summary Bar -->
+          <div id="common-summary-bar" class="compare-summary glass-card hidden">
+            <div class="diff-stats-box">
+              <div class="diff-icon" style="background: rgba(99, 102, 241, 0.15); color: var(--primary);"><i class="fa-solid fa-handshake"></i></div>
+              <div class="diff-text">
+                <h4 id="common-summary-headline">Common Anime Found</h4>
+                <p id="common-summary-sub">Watched by all selected friends</p>
+              </div>
+            </div>
+
+            <div class="sorting-box">
+              <select id="common-sort" class="select-dropdown" onchange="renderCommonResults()" title="Sort Common Anime">
+                <option value="popularity-desc" selected>Populary</option>
+                <option value="alpha-asc">ASC (A-Z)</option>
+                <option value="alpha-desc">DESC (Z-A)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Common Anime Grid -->
+          <div id="common-grid" class="anime-grid hidden">
+            <!-- Dynamically populated common anime cards -->
+          </div>
+
+          <!-- Common Anime Empty / Prompt State -->
+          <div id="common-empty-state" class="empty-state glass-card">
+            <div class="empty-icon"><i class="fa-solid fa-users"></i></div>
+            <h3 id="common-empty-title">Select Multiple Friends</h3>
+            <p id="common-empty-desc">Choose 2 or more friends above to reveal all the anime you've all watched together.</p>
+          </div>
         </div>
       </section>
 
@@ -984,6 +1056,6 @@ Tensura</div>
   </div>
 
   <!-- Application Scripts -->
-  <script src="app.js?v=4.4"></script>
+  <script src="app.js?v=4.8"></script>
 </body>
 </html>

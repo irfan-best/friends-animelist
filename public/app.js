@@ -28,6 +28,17 @@ const state = {
   compareSourceId: null,
   compareDestId: null,
   compareResults: null, // { sourceUser, destinationUser, diffCount, diffAnimes: [...] }
+  compareMode: 'diff', // 'diff' | 'common'
+  selectedCommonFriends: new Set(),
+  commonAnimeResults: null,
+  commonSort: 'popularity-desc',
+
+  // Pagination state (default 50 per page, options: 25, 50, 100, 200, 500)
+  pagination: {
+    watchlist: { page: 1, limit: parseInt(localStorage.getItem('anix_per_page') || '50', 10) || 50 },
+    unwatched: { page: 1, limit: parseInt(localStorage.getItem('anix_per_page') || '50', 10) || 50 },
+    browse: { page: 1, limit: parseInt(localStorage.getItem('anix_per_page') || '50', 10) || 50 }
+  },
 
   // Selection Mode state
   isSelectionMode: false,
@@ -355,10 +366,26 @@ function findAnimeMeta(title) {
 // ==========================================
 // VIEW SWITCHING & URL ROUTING
 // ==========================================
-function updateUrlParams(viewName, categoryNameOrId = null, extraUser = null) {
+function updateUrlParams(viewName, categoryNameOrId = null, extraUser = null, explicitPage = null, explicitLimit = null) {
   try {
     const url = new URL(window.location.href);
     url.searchParams.set('view', viewName);
+
+    // Persist page number
+    const page = explicitPage !== null ? explicitPage : (state.pagination[viewName]?.page || 1);
+    if (page > 1) {
+      url.searchParams.set('page', page);
+    } else {
+      url.searchParams.delete('page');
+    }
+
+    // Persist limit
+    const limit = explicitLimit !== null ? explicitLimit : (state.pagination[viewName]?.limit || 50);
+    if (limit && limit !== 50) {
+      url.searchParams.set('limit', limit);
+    } else {
+      url.searchParams.delete('limit');
+    }
 
     if (viewName === 'watchlist') {
       url.searchParams.delete('user');
@@ -402,7 +429,7 @@ function updateUrlParams(viewName, categoryNameOrId = null, extraUser = null) {
       url.searchParams.delete('user');
     }
 
-    window.history.replaceState({ view: viewName, category: categoryNameOrId, user: extraUser }, '', url.toString());
+    window.history.replaceState({ view: viewName, category: categoryNameOrId, user: extraUser, page, limit }, '', url.toString());
     localStorage.setItem('anix_last_view', viewName);
   } catch (e) {
     console.warn('Failed to update URL parameters:', e);
@@ -415,9 +442,26 @@ function restoreViewFromUrl() {
     const viewParam = url.searchParams.get('view') || localStorage.getItem('anix_last_view') || 'watchlist';
     const catParam = url.searchParams.get('category');
     const userParam = url.searchParams.get('user');
+    const pageParam = url.searchParams.get('page');
+    const limitParam = url.searchParams.get('limit');
 
     const validViews = ['watchlist', 'unwatched', 'browse', 'compare'];
     const targetView = validViews.includes(viewParam) ? viewParam : 'watchlist';
+
+    // Restore page and limit if present
+    if (pageParam) {
+      const pageNum = parseInt(pageParam, 10);
+      if (!isNaN(pageNum) && pageNum > 0 && state.pagination[targetView]) {
+        state.pagination[targetView].page = pageNum;
+      }
+    }
+    if (limitParam) {
+      const limitNum = parseInt(limitParam, 10);
+      if ([25, 50, 100, 200, 500].includes(limitNum) && state.pagination[targetView]) {
+        state.pagination[targetView].limit = limitNum;
+        localStorage.setItem('anix_per_page', limitNum);
+      }
+    }
 
     if (targetView === 'watchlist') {
       const effectiveCat = catParam || localStorage.getItem('anix_last_category');
@@ -587,8 +631,17 @@ function handleWatchlistSearchInput() {
   if (input && btn) {
     btn.classList.toggle('hidden', input.value.trim() === '');
   }
+  state.pagination.watchlist.page = 1;
+  updateUrlParams('watchlist', state.activeCategoryFilter, null, 1);
   renderWatchlistView();
 }
+
+function handleUnwatchedSearchInput() {
+  state.pagination.unwatched.page = 1;
+  updateUrlParams('unwatched', null, null, 1);
+  renderUnwatchedView();
+}
+window.handleUnwatchedSearchInput = handleUnwatchedSearchInput;
 
 function updateUnwatchedSearchBadge() {
   const badge = document.getElementById('unwatched-search-scope-badge');
@@ -692,9 +745,145 @@ function handleWatchlistAllSortChange() {
       localStorage.setItem('anix_watchlist_all_sort', select.value);
     } catch (e) {}
   }
+  state.pagination.watchlist.page = 1;
+  updateUrlParams('watchlist', state.activeCategoryFilter, null, 1);
   renderWatchlistView();
 }
 window.handleWatchlistAllSortChange = handleWatchlistAllSortChange;
+
+function handleUnwatchedSortChange() {
+  state.pagination.unwatched.page = 1;
+  updateUrlParams('unwatched', null, null, 1);
+  renderUnwatchedView();
+}
+window.handleUnwatchedSortChange = handleUnwatchedSortChange;
+
+// Reusable Pagination Generator
+function renderPaginationControls(containerId, totalItems, viewName) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const currentLimit = state.pagination[viewName]?.limit || 50;
+  const currentPage = state.pagination[viewName]?.page || 1;
+  const totalPages = Math.max(1, Math.ceil(totalItems / currentLimit));
+
+  // Correct page if it exceeds totalPages
+  const effectivePage = Math.min(currentPage, totalPages);
+  if (effectivePage !== currentPage) {
+    state.pagination[viewName].page = effectivePage;
+  }
+
+  if (totalItems === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const startItem = (effectivePage - 1) * currentLimit + 1;
+  const endItem = Math.min(effectivePage * currentLimit, totalItems);
+
+  // Generate visible page numbers
+  const pagesToShow = [];
+  const maxButtons = 5;
+  let startP = Math.max(1, effectivePage - 2);
+  let endP = Math.min(totalPages, startP + maxButtons - 1);
+  if (endP - startP < maxButtons - 1) {
+    startP = Math.max(1, endP - maxButtons + 1);
+  }
+  for (let p = startP; p <= endP; p++) {
+    pagesToShow.push(p);
+  }
+
+  container.innerHTML = `
+    <div class="pagination-controls-bar">
+      <div class="pagination-info">
+        <span>Showing <strong>${startItem}–${endItem}</strong> of <strong>${totalItems}</strong></span>
+      </div>
+
+      <div class="pagination-limit-wrap">
+        <span class="pagination-limit-label" style="white-space: nowrap !important;">Per page:</span>
+        <select class="select-dropdown" onchange="handlePaginationLimitChange('${viewName}', this.value)" title="Anime per page">
+          <option value="25" ${currentLimit === 25 ? 'selected' : ''}>25</option>
+          <option value="50" ${currentLimit === 50 ? 'selected' : ''}>50</option>
+          <option value="100" ${currentLimit === 100 ? 'selected' : ''}>100</option>
+          <option value="200" ${currentLimit === 200 ? 'selected' : ''}>200</option>
+          <option value="500" ${currentLimit === 500 ? 'selected' : ''}>500</option>
+        </select>
+      </div>
+
+      <div class="pagination-nav">
+        <button class="pagination-btn" onclick="handlePaginationPageChange('${viewName}', 1)" ${effectivePage <= 1 ? 'disabled' : ''} title="First Page">
+          <i class="fa-solid fa-angles-left"></i>
+        </button>
+        <button class="pagination-btn" onclick="handlePaginationPageChange('${viewName}', ${effectivePage - 1})" ${effectivePage <= 1 ? 'disabled' : ''} title="Previous Page">
+          <i class="fa-solid fa-chevron-left"></i>
+        </button>
+
+        ${startP > 1 ? `
+          <button class="pagination-btn" onclick="handlePaginationPageChange('${viewName}', 1)">1</button>
+          ${startP > 2 ? '<span style="color: var(--text-dim); padding: 0 2px;">...</span>' : ''}
+        ` : ''}
+
+        ${pagesToShow.map(p => `
+          <button class="pagination-btn ${p === effectivePage ? 'active' : ''}" onclick="handlePaginationPageChange('${viewName}', ${p})">
+            ${p}
+          </button>
+        `).join('')}
+
+        ${endP < totalPages ? `
+          ${endP < totalPages - 1 ? '<span style="color: var(--text-dim); padding: 0 2px;">...</span>' : ''}
+          <button class="pagination-btn" onclick="handlePaginationPageChange('${viewName}', ${totalPages})">${totalPages}</button>
+        ` : ''}
+
+        <button class="pagination-btn" onclick="handlePaginationPageChange('${viewName}', ${effectivePage + 1})" ${effectivePage >= totalPages ? 'disabled' : ''} title="Next Page">
+          <i class="fa-solid fa-chevron-right"></i>
+        </button>
+        <button class="pagination-btn" onclick="handlePaginationPageChange('${viewName}', ${totalPages})" ${effectivePage >= totalPages ? 'disabled' : ''} title="Last Page">
+          <i class="fa-solid fa-angles-right"></i>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function handlePaginationPageChange(viewName, newPage) {
+  if (!state.pagination[viewName]) return;
+  state.pagination[viewName].page = newPage;
+  if (viewName === 'watchlist') {
+    updateUrlParams('watchlist', state.activeCategoryFilter, null, newPage);
+    renderWatchlistView();
+  } else if (viewName === 'unwatched') {
+    updateUrlParams('unwatched', null, null, newPage);
+    renderUnwatchedView();
+  } else if (viewName === 'browse') {
+    updateUrlParams('browse', state.browseActiveCategoryFilter, state.urlBrowseUser, newPage);
+    renderBrowseView();
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function handlePaginationLimitChange(viewName, newLimitVal) {
+  const limit = parseInt(newLimitVal, 10);
+  if (![25, 50, 100, 200, 500].includes(limit)) return;
+  if (!state.pagination[viewName]) return;
+  state.pagination[viewName].limit = limit;
+  state.pagination[viewName].page = 1;
+  localStorage.setItem('anix_per_page', limit);
+
+  if (viewName === 'watchlist') {
+    updateUrlParams('watchlist', state.activeCategoryFilter, null, 1, limit);
+    renderWatchlistView();
+  } else if (viewName === 'unwatched') {
+    updateUrlParams('unwatched', null, null, 1, limit);
+    renderUnwatchedView();
+  } else if (viewName === 'browse') {
+    updateUrlParams('browse', state.browseActiveCategoryFilter, state.urlBrowseUser, 1, limit);
+    renderBrowseView();
+  }
+}
+
+window.renderPaginationControls = renderPaginationControls;
+window.handlePaginationPageChange = handlePaginationPageChange;
+window.handlePaginationLimitChange = handlePaginationLimitChange;
 
 // ==========================================
 // SECONDARY HEADER FOR "MY WATCHLIST" (CATEGORIES AS HEADERS)
@@ -815,7 +1004,8 @@ function renderWatchlistSubHeader() {
 function filterOrScrollCategory(catId) {
   clearRowFocus();
   state.activeCategoryFilter = catId;
-  updateUrlParams('watchlist', catId);
+  state.pagination.watchlist.page = 1;
+  updateUrlParams('watchlist', catId, null, 1);
   renderWatchlistSubHeader();
   updateWatchlistSearchBadge();
   renderWatchlistView();
@@ -1230,7 +1420,8 @@ function renderWatchlistView() {
       });
     }
 
-    if (allWatched.length === 0) {
+    const totalItems = allWatched.length;
+    if (totalItems === 0) {
       container.innerHTML = `
         <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
           <i class="fa-solid fa-magnifying-glass" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
@@ -1239,15 +1430,25 @@ function renderWatchlistView() {
           ${query ? `<button class="btn btn-sm btn-outline" style="margin-top: 0.75rem;" onclick="toggleWatchlistSearchScope()"><i class="fa-solid fa-globe"></i> Search All Images (Shift+Space)</button>` : ''}
         </div>
       `;
+      renderPaginationControls('watchlist-pagination', 0, 'watchlist');
       renderWatchlistSubHeader();
       return;
     }
+
+    const page = state.pagination.watchlist.page || 1;
+    const limit = state.pagination.watchlist.limit || 50;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const effectivePage = Math.min(page, totalPages);
+    state.pagination.watchlist.page = effectivePage;
+
+    const pagedWatched = allWatched.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid all-animes-grid';
     grid.id = 'cat-grid-all';
 
-    allWatched.forEach((item, globalIdx) => {
+    pagedWatched.forEach((item, pageLocalIdx) => {
+      const globalIdx = (effectivePage - 1) * limit + pageLocalIdx;
       const meta = findAnimeMeta(item.title);
       const card = createWatchlistAnimeCard(
         item.title,
@@ -1262,6 +1463,7 @@ function renderWatchlistView() {
     });
 
     container.appendChild(grid);
+    renderPaginationControls('watchlist-pagination', totalItems, 'watchlist');
     triggerGridRowAlignment();
     renderWatchlistSubHeader();
     updateSelectionUI();
@@ -1289,6 +1491,7 @@ function renderWatchlistView() {
           <p style="color: var(--text-muted);">No anime in "${escapeHtml(cat.categoryName)}" yet. Add from <a href="#" onclick="switchView('unwatched'); return false;" style="color: var(--secondary); text-decoration: underline;">Not Watched</a> or drag an anime card here!</p>
         </div>
       `;
+      renderPaginationControls('watchlist-pagination', 0, 'watchlist');
       return;
     }
 
@@ -1303,8 +1506,18 @@ function renderWatchlistView() {
           </button>
         </div>
       `;
+      renderPaginationControls('watchlist-pagination', 0, 'watchlist');
       return;
     }
+
+    const totalItems = displayedAnimes.length;
+    const page = state.pagination.watchlist.page || 1;
+    const limit = state.pagination.watchlist.limit || 50;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const effectivePage = Math.min(page, totalPages);
+    state.pagination.watchlist.page = effectivePage;
+
+    const pagedAnimes = displayedAnimes.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid single-category-grid drop-zone';
@@ -1314,13 +1527,15 @@ function renderWatchlistView() {
     grid.ondragleave = (e) => handleDragLeave(e);
     grid.ondrop = (e) => handleDrop(e, cat._id);
 
-    displayedAnimes.forEach((animeTitle, animeIdx) => {
+    pagedAnimes.forEach((animeTitle, pageLocalIdx) => {
+      const animeIdx = (effectivePage - 1) * limit + pageLocalIdx;
       const meta = findAnimeMeta(animeTitle);
       const card = createWatchlistAnimeCard(animeTitle, meta, cat._id, animeIdx, displayedAnimes.length, null, false);
       grid.appendChild(card);
     });
 
     container.appendChild(grid);
+    renderPaginationControls('watchlist-pagination', totalItems, 'watchlist');
   });
 
   renderWatchlistSubHeader();
@@ -1382,7 +1597,7 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
     <div class="card-poster-wrap">
       <div class="card-select-checkbox">${isSelected ? '<i class="fa-solid fa-check"></i>' : ''}</div>
       <img class="card-poster" src="${meta ? meta.imageUrl : `/images/${encodeURIComponent(title)}.jpg`}" alt="${escapeAttr(title)}" loading="lazy" onload="triggerGridRowAlignment()" onerror="this.src='/images/Naruto.jpg'; triggerGridRowAlignment();">
-      <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeAttr(title)}')">
+      <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeJsAttr(title)}')">
         <i class="fa-solid fa-fire"></i> ${popCount}
       </div>
       <div class="order-badge" title="${isAllView ? 'Overall watched order' : 'Rank in category'}">#${index + 1}</div>
@@ -1397,24 +1612,24 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
       ` : ''}
       <div class="card-actions">
         ${!isAllView ? `
-          <button class="btn btn-icon" title="Move up in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeAttr(title)}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
+          <button class="btn btn-icon" title="Move up in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeJsAttr(title)}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
             <i class="fa-solid fa-arrow-up"></i>
           </button>
-          <button class="btn btn-icon" title="Move down in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeAttr(title)}', 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
+          <button class="btn btn-icon" title="Move down in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeJsAttr(title)}', 1)" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
             <i class="fa-solid fa-arrow-down"></i>
           </button>
         ` : `
-          <button class="btn btn-icon" title="${isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Move up in overall order"}" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', -1)" ${(isFirst || isSortDisabled) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}>
+          <button class="btn btn-icon" title="${isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Move up in overall order"}" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeJsAttr(title)}', -1)" ${(isFirst || isSortDisabled) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}>
             <i class="fa-solid fa-arrow-up"></i>
           </button>
-          <button class="btn btn-icon" title="${isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Move down in overall order"}" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeAttr(title)}', 1)" ${(isLast || isSortDisabled) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}>
+          <button class="btn btn-icon" title="${isSortDisabled ? "Reordering is disabled when sorted. Switch to 'Category Order (Default)' to reorder." : "Move down in overall order"}" onclick="event.stopPropagation(); reorderAnimeInAllView('${escapeJsAttr(title)}', 1)" ${(isLast || isSortDisabled) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}>
             <i class="fa-solid fa-arrow-down"></i>
           </button>
         `}
-        <button class="btn btn-icon" title="Move to another category" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeAttr(title)}', '${categoryId}')">
+        <button class="btn btn-icon" title="Move to another category" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(title)}', '${categoryId}')">
           <i class="fa-solid fa-arrows-split-up-and-left"></i>
         </button>
-        <button class="btn btn-icon btn-danger" title="Remove from category (returns to Unwatched)" onclick="event.stopPropagation(); removeAnimeFromWatchlist('${escapeAttr(title)}')">
+        <button class="btn btn-icon btn-danger" title="Remove from category (returns to Unwatched)" onclick="event.stopPropagation(); removeAnimeFromWatchlist('${escapeJsAttr(title)}')">
           <i class="fa-solid fa-trash-can"></i>
         </button>
       </div>
@@ -2460,14 +2675,14 @@ function renderAdminUsersList() {
 
             <div class="admin-user-pw-box">
               <span style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); margin-right: 4px; font-weight: 700;">Password:</span>
-              <span class="admin-pw-val" id="admin-pw-text-${user._id}" title="Click to copy password" onclick="navigator.clipboard.writeText('${escapeAttr(directPw || '')}'); showToast('Password copied to clipboard!', 'info', 1500);" style="cursor: pointer; word-break: break-all; font-family: monospace;">
+              <span class="admin-pw-val" id="admin-pw-text-${user._id}" title="Click to copy password" onclick="navigator.clipboard.writeText('${escapeJsAttr(directPw || '')}'); showToast('Password copied to clipboard!', 'info', 1500);" style="cursor: pointer; word-break: break-all; font-family: monospace;">
                 ${hasPw ? escapeHtml(directPw) : '<span style="color: var(--text-dim); font-style: italic;">(None)</span>'}
               </span>
             </div>
 
             <div class="admin-user-edit-wrap">
-              <input type="text" id="pw-input-${user._id}" class="admin-pw-input" placeholder="New password..." autocomplete="off" onkeydown="if (event.key === 'Enter') { event.preventDefault(); saveUserPassword('${user._id}', '${escapeAttr(user.username)}'); }">
-              <button type="button" class="btn btn-sm btn-primary" id="btn-save-pw-${user._id}" onclick="saveUserPassword('${user._id}', '${escapeAttr(user.username)}')">
+              <input type="text" id="pw-input-${user._id}" class="admin-pw-input" placeholder="New password..." autocomplete="off" onkeydown="if (event.key === 'Enter') { event.preventDefault(); saveUserPassword('${user._id}', '${escapeJsAttr(user.username)}'); }">
+              <button type="button" class="btn btn-sm btn-primary" id="btn-save-pw-${user._id}" onclick="saveUserPassword('${user._id}', '${escapeJsAttr(user.username)}')">
                 <i class="fa-solid fa-check"></i> Save
               </button>
             </div>
@@ -2821,13 +3036,23 @@ function renderUnwatchedView() {
 
   grid.innerHTML = '';
 
-  if (unwatchedList.length === 0) {
+  const totalItems = unwatchedList.length;
+  if (totalItems === 0) {
     emptyState.classList.remove('hidden');
+    renderPaginationControls('unwatched-pagination', 0, 'unwatched');
     return;
   }
   emptyState.classList.add('hidden');
 
-  unwatchedList.forEach(anime => {
+  const page = state.pagination.unwatched.page || 1;
+  const limit = state.pagination.unwatched.limit || 50;
+  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+  const effectivePage = Math.min(page, totalPages);
+  state.pagination.unwatched.page = effectivePage;
+
+  const pagedList = unwatchedList.slice((effectivePage - 1) * limit, effectivePage * limit);
+
+  pagedList.forEach(anime => {
     const key = anime.title.toLowerCase().trim();
     const popCount = state.globalStats[anime.title] ?? state.globalStats[key] ?? 0;
     const rankSum = state.globalRankStats[anime.title] ?? state.globalRankStats[key] ?? 0;
@@ -2843,7 +3068,7 @@ function renderUnwatchedView() {
       <div class="card-poster-wrap">
         <div class="card-select-checkbox">${isSelected ? '<i class="fa-solid fa-check"></i>' : ''}</div>
         <img class="card-poster" src="${anime.imageUrl}" alt="${escapeAttr(anime.title)}" loading="lazy" onload="triggerGridRowAlignment()" onerror="this.src='/images/Naruto.jpg'; triggerGridRowAlignment();">
-        <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'}${popCount > 0 ? ` · Rank sum: ${rankSum}` : ''})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeAttr(anime.title)}')">
+        <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'}${popCount > 0 ? ` · Rank sum: ${rankSum}` : ''})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeJsAttr(anime.title)}')">
           <i class="fa-solid fa-fire"></i> ${popCount} users
         </div>
         <div class="copy-hover-badge"><i class="fa-regular fa-copy"></i> Click to copy</div>
@@ -2855,13 +3080,13 @@ function renderUnwatchedView() {
             <span class="text-highlight"><i class="fa-solid fa-folder"></i> In "${escapeHtml(cat.categoryName)}"</span>
           </div>
           <div class="card-actions">
-            <button class="btn btn-outline btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeAttr(anime.title)}')">
+            <button class="btn btn-outline btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(anime.title)}')">
               <i class="fa-solid fa-arrows-split-up-and-left"></i> Move Category
             </button>
           </div>
         ` : `
           <div class="card-actions">
-            <button class="btn btn-primary btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeAttr(anime.title)}')">
+            <button class="btn btn-primary btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(anime.title)}')">
               <i class="fa-solid fa-plus"></i> Mark Watched
             </button>
           </div>
@@ -2883,6 +3108,7 @@ function renderUnwatchedView() {
     grid.appendChild(card);
   });
 
+  renderPaginationControls('unwatched-pagination', totalItems, 'unwatched');
   updateSelectionButtonTexts();
   updateSelectionUI();
   triggerGridRowAlignment();
@@ -2896,11 +3122,11 @@ function clearUnwatchedSearch() {
   if (input) input.value = '';
   const clearBtn = document.getElementById('clear-search-btn');
   if (clearBtn) clearBtn.classList.add('hidden');
+  state.pagination.unwatched.page = 1;
+  updateUrlParams('unwatched', null, null, 1);
   renderUnwatchedView();
 }
 
-// ==========================================
-// VIEW 3: BROWSE OTHER USERS (SHOW ALL COMMUNITY MEMBERS)
 // ==========================================
 function isBrowseCategoryActive(cat) {
   if (!state.browseActiveCategoryFilter || state.browseActiveCategoryFilter === 'all') return false;
@@ -2911,10 +3137,11 @@ function isBrowseCategoryActive(cat) {
 function filterBrowseCategory(catIdOrName) {
   clearRowFocus();
   state.browseActiveCategoryFilter = catIdOrName;
+  state.pagination.browse.page = 1;
   const user = state.communityUsers.find(u => u._id === state.browseSelectedUserId);
   const username = user ? user.username : null;
 
-  updateUrlParams('browse', catIdOrName, username);
+  updateUrlParams('browse', catIdOrName, username, 1);
 
   if (state.browseUserWatchlist && user) {
     let totalWatched = 0;
@@ -2929,35 +3156,27 @@ window.filterBrowseCategory = filterBrowseCategory;
 
 async function renderBrowseView() {
   try {
-    const users = await apiRequest('/api/users');
-    state.communityUsers = (users || []).sort((a, b) => (b.totalWatched || 0) - (a.totalWatched || 0) || (a.username || '').localeCompare(b.username || ''));
+    const res = await apiRequest('/api/users');
+    state.communityUsers = Array.isArray(res) ? res : (res?.users || []);
 
-    const countElem = document.getElementById('browse-users-count');
-    if (countElem) countElem.textContent = state.communityUsers.length;
-
-    const grid = document.getElementById('browse-users-grid');
+    // Populate browse-directory-grid
+    const grid = document.getElementById('browse-directory-grid');
     if (grid) {
       grid.innerHTML = '';
       if (state.communityUsers.length === 0) {
-        grid.innerHTML = '<p class="text-muted">No other registered users found.</p>';
+        grid.innerHTML = '<p class="text-dim" style="grid-column: 1/-1; text-align: center;">No registered users yet.</p>';
       } else {
         state.communityUsers.forEach(user => {
-          const isMe = user._id === state.currentUser._id;
-          const isSelected = state.browseSelectedUserId === user._id;
-
+          const isMe = Boolean(state.currentUser && user._id === state.currentUser._id);
+          const initial = user.username.charAt(0).toUpperCase();
           const card = document.createElement('div');
-          card.className = `user-dir-card ${isSelected ? 'active' : ''}`;
+          card.className = `user-dir-card ${state.browseSelectedUserId === user._id ? 'active-user' : ''}`;
           card.setAttribute('data-user-id', user._id);
           card.innerHTML = `
-            <div class="user-dir-avatar">
-              <i class="fa-solid fa-user-ninja"></i>
-            </div>
+            <div class="user-dir-avatar">${initial}</div>
             <div class="user-dir-info">
-              <div class="user-dir-name-row">
-                <span class="user-dir-name">${escapeHtml(user.username)}</span>
-                ${isMe ? '<span class="user-dir-you-badge">You</span>' : ''}
-              </div>
-              <span class="user-dir-stats"><i class="fa-solid fa-film"></i> ${user.totalWatched || 0} watched · ${user.totalCategories || 0} categories</span>
+              <span class="user-dir-name">${escapeHtml(user.username)} ${isMe ? '<span class="user-dir-you">(You)</span>' : ''}</span>
+              <span class="user-dir-stats">Watched: ${user.totalWatched || 0} anime</span>
             </div>
             <div class="user-dir-active-indicator">
               <i class="fa-solid fa-circle-check"></i>
@@ -3011,6 +3230,7 @@ async function renderBrowseView() {
 function handleBrowseUserSelect(userId) {
   if (!userId) return;
   state.browseActiveCategoryFilter = 'all';
+  state.pagination.browse.page = 1;
   loadBrowseUserProfile(userId, 'all');
 }
 window.handleBrowseUserSelect = handleBrowseUserSelect;
@@ -3072,9 +3292,11 @@ function handleBrowseAllSortChange() {
   if (select) {
     state.browseAllSort = select.value;
   }
+  state.pagination.browse.page = 1;
   if (state.browseSelectedUserId) {
     const user = state.communityUsers.find(u => u._id === state.browseSelectedUserId);
     if (user && state.browseUserWatchlist) {
+      updateUrlParams('browse', state.browseActiveCategoryFilter, user.username, 1);
       renderBrowseWatchlistContent(user, state.browseUserWatchlist, getWatchedTitlesSet(state.browseUserWatchlist).size);
     }
   }
@@ -3157,6 +3379,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
         <p>This user hasn't created any categories yet.</p>
       </div>
     `;
+    renderPaginationControls('browse-pagination', 0, 'browse');
     return;
   }
 
@@ -3172,8 +3395,6 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
   }
 
   if (isAll) {
-    // UNIFIED "ALL" CATEGORIES VIEW:
-    // Show all watched anime side-by-side in a continuous grid without category separation
     const allWatched = [];
     sortedCats.forEach(cat => {
       (cat.animes || []).forEach((animeTitle, animeIdx) => {
@@ -3209,7 +3430,8 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
       });
     }
 
-    if (allWatched.length === 0) {
+    const totalItems = allWatched.length;
+    if (totalItems === 0) {
       container.innerHTML = `
         <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
           <i class="fa-regular fa-folder-open" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
@@ -3217,51 +3439,73 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
           <p style="color: var(--text-muted);">${escapeHtml(user.username)} hasn't added any anime to their categories yet.</p>
         </div>
       `;
+      renderPaginationControls('browse-pagination', 0, 'browse');
       return;
     }
+
+    const page = state.pagination.browse.page || 1;
+    const limit = state.pagination.browse.limit || 50;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const effectivePage = Math.min(page, totalPages);
+    state.pagination.browse.page = effectivePage;
+
+    const pagedWatched = allWatched.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid all-animes-grid';
     grid.id = 'browse-cat-all';
 
-    allWatched.forEach((item, globalIdx) => {
+    pagedWatched.forEach((item, pageLocalIdx) => {
+      const globalIdx = (effectivePage - 1) * limit + pageLocalIdx;
       const card = createBrowseAnimeCard(item.title, globalIdx, item.categoryName);
       grid.appendChild(card);
     });
 
     container.appendChild(grid);
+    renderPaginationControls('browse-pagination', totalItems, 'browse');
     triggerGridRowAlignment();
     return;
   }
 
   // SINGLE CATEGORY FILTER VIEW:
-  // Show only images belonging to the selected category (directly in grid, no duplicate category header)
   const matchedCats = sortedCats.filter(c => isBrowseCategoryActive(c));
   const displayedCats = matchedCats.length > 0 ? matchedCats : sortedCats;
 
   displayedCats.forEach((cat) => {
     const displayedAnimes = cat.animes || [];
 
-    if (displayedAnimes.length === 0) {
+    const totalItems = displayedAnimes.length;
+    if (totalItems === 0) {
       container.innerHTML = `
         <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
           <i class="fa-regular fa-folder-open" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
           <p style="color: var(--text-muted);">No anime in "${escapeHtml(cat.categoryName)}".</p>
         </div>
       `;
+      renderPaginationControls('browse-pagination', 0, 'browse');
       return;
     }
+
+    const page = state.pagination.browse.page || 1;
+    const limit = state.pagination.browse.limit || 50;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const effectivePage = Math.min(page, totalPages);
+    state.pagination.browse.page = effectivePage;
+
+    const pagedAnimes = displayedAnimes.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid single-category-grid';
     grid.id = `browse-cat-${cat._id}`;
 
-    displayedAnimes.forEach((animeTitle, idx) => {
+    pagedAnimes.forEach((animeTitle, pageLocalIdx) => {
+      const idx = (effectivePage - 1) * limit + pageLocalIdx;
       const card = createBrowseAnimeCard(animeTitle, idx, null);
       grid.appendChild(card);
     });
 
     container.appendChild(grid);
+    renderPaginationControls('browse-pagination', totalItems, 'browse');
   });
 
   triggerGridRowAlignment();
@@ -3276,7 +3520,7 @@ function createBrowseAnimeCard(animeTitle, idx, categoryName = null) {
   card.innerHTML = `
     <div class="card-poster-wrap">
       <img class="card-poster" src="${meta ? meta.imageUrl : `/images/${encodeURIComponent(animeTitle)}.jpg`}" alt="${escapeAttr(animeTitle)}" loading="lazy" onload="triggerGridRowAlignment()" onerror="this.src='/images/Naruto.jpg'; triggerGridRowAlignment();">
-      <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeAttr(animeTitle)}')">
+      <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeJsAttr(animeTitle)}')">
         <i class="fa-solid fa-fire"></i> ${popCount}
       </div>
       <div class="order-badge" title="${categoryName ? 'Overall watched order' : 'Rank in category'}">#${idx + 1}</div>
@@ -3347,9 +3591,11 @@ async function renderCompareView() {
       const otherUser = state.communityUsers.find(u => u._id !== state.currentUser._id);
       state.compareDestId = otherUser ? otherUser._id : state.currentUser._id;
     }
-    destSelect.value = state.compareDestId;
-
-    runComparison();
+    if (state.compareMode === 'common') {
+      switchCompareMode('common');
+    } else {
+      switchCompareMode('diff');
+    }
   } catch (err) {
     showToast('Failed to initialize comparison.', 'error');
   }
@@ -3472,7 +3718,7 @@ function renderCompareResults() {
         ${item.destRank ? `
           <div class="order-badge" title="${escapeAttr(data.destinationUser.username)}'s Rank #${item.destRank}">#${item.destRank}</div>
         ` : ''}
-        <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeAttr(item.title)}')">
+        <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeJsAttr(item.title)}')">
           <i class="fa-solid fa-fire"></i> ${popCount}
         </div>
         <div class="copy-hover-badge"><i class="fa-regular fa-copy"></i> Click to copy</div>
@@ -3484,7 +3730,7 @@ function renderCompareResults() {
         </div>
         ${isSourceCurrentUser ? `
           <div class="card-actions">
-            <button class="btn btn-accent btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeAttr(item.title)}')">
+            <button class="btn btn-accent btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
               <i class="fa-solid fa-plus"></i> Add to My Watchlist
             </button>
           </div>
@@ -3502,6 +3748,289 @@ function renderCompareResults() {
   });
   triggerGridRowAlignment();
 }
+
+// ==========================================
+// MULTI-FRIEND COMMON ANIME COMPARE
+// ==========================================
+function switchCompareMode(mode) {
+  state.compareMode = mode;
+  const diffBtn = document.getElementById('compare-mode-diff-btn');
+  const commonBtn = document.getElementById('compare-mode-common-btn');
+  const diffPanel = document.getElementById('compare-diff-panel');
+  const commonPanel = document.getElementById('compare-common-panel');
+  const subtitle = document.getElementById('compare-subtitle');
+
+  if (mode === 'common') {
+    diffBtn?.classList.remove('active');
+    commonBtn?.classList.add('active');
+    diffPanel?.classList.add('hidden');
+    commonPanel?.classList.remove('hidden');
+    if (subtitle) subtitle.textContent = 'Discover all commonly watched anime shared among multiple selected friends.';
+    renderCommonFriendsChips();
+    if (state.selectedCommonFriends.size >= 2) {
+      fetchCommonAnime();
+    }
+  } else {
+    commonBtn?.classList.remove('active');
+    diffBtn?.classList.add('active');
+    commonPanel?.classList.add('hidden');
+    diffPanel?.classList.remove('hidden');
+    if (subtitle) subtitle.textContent = "Discover anime watched by the Destination User that the Source User hasn't seen yet.";
+    runComparison();
+  }
+}
+window.switchCompareMode = switchCompareMode;
+
+function renderCommonFriendsChips() {
+  const container = document.getElementById('common-friends-chips');
+  if (!container) return;
+
+  const users = state.communityUsers || [];
+  if (users.length === 0) {
+    container.innerHTML = '<span style="color: var(--text-dim); font-size: 0.85rem;">No users found.</span>';
+    return;
+  }
+
+  // Auto-select current user and another friend if empty
+  if (state.selectedCommonFriends.size === 0 && state.currentUser) {
+    const myId = state.currentUser._id || state.currentUser.id;
+    if (myId) state.selectedCommonFriends.add(myId);
+    const other = users.find(u => u._id !== myId);
+    if (other) state.selectedCommonFriends.add(other._id);
+  }
+
+  container.innerHTML = users.map(u => {
+    const isSelected = state.selectedCommonFriends.has(u._id);
+    const isMe = Boolean(state.currentUser && (u._id === state.currentUser._id || u._id === state.currentUser.id));
+    return `
+      <div class="friend-chip ${isSelected ? 'selected' : ''}" onclick="toggleCommonFriend('${u._id}')">
+        <span class="friend-chip-checkbox">
+          ${isSelected ? '<i class="fa-solid fa-check"></i>' : ''}
+        </span>
+        <span>${escapeHtml(u.username)}${isMe ? ' (You)' : ''}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleCommonFriend(userId) {
+  if (state.selectedCommonFriends.has(userId)) {
+    state.selectedCommonFriends.delete(userId);
+  } else {
+    state.selectedCommonFriends.add(userId);
+  }
+  renderCommonFriendsChips();
+  fetchCommonAnime();
+}
+
+function selectAllCommonFriends() {
+  (state.communityUsers || []).forEach(u => state.selectedCommonFriends.add(u._id));
+  renderCommonFriendsChips();
+  fetchCommonAnime();
+}
+
+function clearAllCommonFriends() {
+  state.selectedCommonFriends.clear();
+  renderCommonFriendsChips();
+  fetchCommonAnime();
+}
+
+async function fetchCommonAnime() {
+  const summaryBar = document.getElementById('common-summary-bar');
+  const grid = document.getElementById('common-grid');
+  const emptyState = document.getElementById('common-empty-state');
+  const emptyTitle = document.getElementById('common-empty-title');
+  const emptyDesc = document.getElementById('common-empty-desc');
+
+  const selectedIds = Array.from(state.selectedCommonFriends);
+
+  if (selectedIds.length < 2) {
+    if (summaryBar) summaryBar.classList.add('hidden');
+    if (grid) {
+      grid.classList.add('hidden');
+      grid.innerHTML = '';
+    }
+    if (emptyState) {
+      emptyState.classList.remove('hidden');
+      if (emptyTitle) emptyTitle.textContent = 'Select Multiple Friends';
+      if (emptyDesc) emptyDesc.textContent = 'Select at least 2 friends above to discover all commonly watched anime.';
+    }
+    state.commonAnimeResults = null;
+    return;
+  }
+
+  try {
+    const res = await apiRequest('/api/watchlist/common', {
+      method: 'POST',
+      body: JSON.stringify({ userIds: selectedIds })
+    });
+
+    state.commonAnimeResults = res;
+    renderCommonResults();
+  } catch (err) {
+    showToast(err.message || 'Failed to fetch common anime.', 'error');
+  }
+}
+
+function renderCommonResults() {
+  const summaryBar = document.getElementById('common-summary-bar');
+  const grid = document.getElementById('common-grid');
+  const emptyState = document.getElementById('common-empty-state');
+  const emptyTitle = document.getElementById('common-empty-title');
+  const emptyDesc = document.getElementById('common-empty-desc');
+  const sortSelect = document.getElementById('common-sort');
+
+  if (!state.commonAnimeResults || !state.commonAnimeResults.commonAnimes) {
+    return;
+  }
+
+  const { users, totalCommon, commonAnimes } = state.commonAnimeResults;
+  const userNames = users.map(u => u.username).join(', ');
+
+  if (totalCommon === 0) {
+    if (summaryBar) summaryBar.classList.add('hidden');
+    if (grid) {
+      grid.classList.add('hidden');
+      grid.innerHTML = '';
+    }
+    if (emptyState) {
+      emptyState.classList.remove('hidden');
+      if (emptyTitle) emptyTitle.textContent = 'No Common Anime Found';
+      if (emptyDesc) emptyDesc.textContent = `There are no anime titles that all ${users.length} selected friends have watched together.`;
+    }
+    return;
+  }
+
+  if (emptyState) emptyState.classList.add('hidden');
+  if (summaryBar) summaryBar.classList.remove('hidden');
+  if (grid) grid.classList.remove('hidden');
+
+  const headline = document.getElementById('common-summary-headline');
+  const sub = document.getElementById('common-summary-sub');
+  if (headline) headline.textContent = `${totalCommon} Commonly Watched Anime`;
+  const firstNames = users.map(u => (u.username || '').trim().split(/\s+/)[0]).join(', ');
+  if (sub) sub.textContent = `Common to ${firstNames} (${users.length} friends)`;
+
+  // Sort common animes
+  const sortVal = sortSelect ? sortSelect.value : 'popularity-desc';
+  const sorted = [...commonAnimes];
+
+  if (sortVal === 'alpha-asc') {
+    sorted.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  } else if (sortVal === 'alpha-desc') {
+    sorted.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+  } else if (sortVal === 'popularity-desc') {
+    sorted.sort((a, b) => {
+      const keyA = a.title.toLowerCase().trim();
+      const keyB = b.title.toLowerCase().trim();
+      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+      if (popB !== popA) return popB - popA;
+
+      if (popA > 0) {
+        const rankA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? Infinity;
+        const rankB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? Infinity;
+        if (rankA !== rankB) return rankA - rankB;
+      }
+
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    });
+  }
+
+  grid.innerHTML = '';
+  sorted.forEach(item => {
+    const meta = findAnimeMeta(item.title);
+    const key = item.title.toLowerCase().trim();
+    const popCount = state.globalStats[item.title] ?? state.globalStats[key] ?? 0;
+    const cat = findCategoryForAnime(item.title);
+    const isWatchedByMe = Boolean(cat);
+
+    const card = document.createElement('div');
+    card.className = 'anime-card';
+    card.setAttribute('data-anime-title', item.title);
+
+    const sortedBreakdown = [...(item.userBreakdown || [])].sort((a, b) => {
+      const rA = (a.rank != null) ? a.rank : Infinity;
+      const rB = (b.rank != null) ? b.rank : Infinity;
+      if (rA !== rB) return rA - rB;
+      return (a.username || '').localeCompare(b.username || '');
+    });
+
+    const ranksHtml = sortedBreakdown.map(u => {
+      const firstName = (u.username || '').trim().split(/\s+/)[0] || 'Friend';
+      const rankVal = u.rank != null ? u.rank : '?';
+      return `
+        <span class="common-rank-chip"
+              onclick="event.stopPropagation(); inspectUserWatchlist('${u.userId}')"
+              title="View ${escapeAttr(u.username)}'s watchlist (Rank #${rankVal})">
+          <span class="chip-user">${escapeHtml(firstName)}</span>
+          <span class="chip-rank">#${rankVal}</span>
+        </span>
+      `;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="card-poster-wrap">
+        <img class="card-poster" src="${meta ? meta.imageUrl : item.imageUrl}" alt="${escapeAttr(item.title)}" loading="lazy" onload="triggerGridRowAlignment()" onerror="this.src='/images/Naruto.jpg'; triggerGridRowAlignment();">
+        <div class="pop-badge ${popCount > 0 ? 'pop-hot' : ''}" title="Click to view who watched (${popCount} user${popCount === 1 ? '' : 's'})" onclick="event.stopPropagation(); showAnimeWatchersModal('${escapeJsAttr(item.title)}')">
+          <i class="fa-solid fa-fire"></i> ${popCount}
+        </div>
+        <div class="copy-hover-badge"><i class="fa-regular fa-copy"></i> Click to copy</div>
+      </div>
+      <div class="card-content">
+        <h4 class="anime-title" title="${escapeAttr(item.title)}">${escapeHtml(item.title)}</h4>
+        <div class="common-ranks-wrap">
+          ${ranksHtml}
+        </div>
+        ${!isWatchedByMe ? `
+          <div class="card-actions">
+            <button class="btn btn-accent btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
+              <i class="fa-solid fa-plus"></i> Add to My Watchlist
+            </button>
+          </div>
+        ` : `
+          <div class="card-actions">
+            <button class="btn btn-outline btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
+              <i class="fa-solid fa-folder"></i> In "${escapeHtml(cat.categoryName)}"
+            </button>
+          </div>
+        `}
+      </div>
+    `;
+
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('.btn') || e.target.closest('.card-actions') || e.target.closest('.pop-badge') || e.target.closest('.common-rank-chip')) {
+        return;
+      }
+      copyAnimeTitle(item.title);
+    });
+
+    grid.appendChild(card);
+  });
+
+  triggerGridRowAlignment();
+}
+
+function toggleCommonRankChip(btn) {
+  if (!btn) return;
+  const firstName = btn.getAttribute('data-firstname') || '';
+  const rank = btn.getAttribute('data-rank') || '?';
+  const isExpanded = btn.classList.toggle('expanded');
+  const span = btn.querySelector('.chip-content') || btn;
+  if (isExpanded) {
+    span.textContent = `${firstName} #${rank}`;
+  } else {
+    span.textContent = `#${rank}`;
+  }
+}
+
+window.renderCommonFriendsChips = renderCommonFriendsChips;
+window.toggleCommonFriend = toggleCommonFriend;
+window.selectAllCommonFriends = selectAllCommonFriends;
+window.clearAllCommonFriends = clearAllCommonFriends;
+window.fetchCommonAnime = fetchCommonAnime;
+window.renderCommonResults = renderCommonResults;
+window.toggleCommonRankChip = toggleCommonRankChip;
 
 // ==========================================
 // HELPERS & MODAL CONTROLS
@@ -3541,6 +4070,19 @@ function escapeAttr(str) {
   if (!str) return '';
   return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+function escapeJsAttr(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+}
+window.escapeJsAttr = escapeJsAttr;
+window.escapeAttr = escapeAttr;
+window.escapeHtml = escapeHtml;
 
 // ==========================================
 // WATCHERS POPUP MODAL LOGIC
@@ -3582,6 +4124,17 @@ async function showAnimeWatchersModal(animeTitle) {
     const watchers = res.watchers || [];
     const count = res.count !== undefined ? res.count : watchers.length;
 
+    // Strict sort: rank ASC (#1, #2...), tie-breaker: totalWatched DESC, tie-breaker: username ASC
+    watchers.sort((a, b) => {
+      const rankA = (a.rank != null) ? a.rank : Infinity;
+      const rankB = (b.rank != null) ? b.rank : Infinity;
+      if (rankA !== rankB) return rankA - rankB;
+      const countA = a.totalWatched || 0;
+      const countB = b.totalWatched || 0;
+      if (countB !== countA) return countB - countA;
+      return (a.username || '').localeCompare(b.username || '');
+    });
+
     if (countBadgeEl) {
       countBadgeEl.innerHTML = `<i class="fa-solid fa-fire text-highlight"></i> ${count} user${count === 1 ? '' : 's'} watching`;
     }
@@ -3611,10 +4164,15 @@ async function showAnimeWatchersModal(animeTitle) {
                 <span style="font-weight: 700; font-size: 0.95rem; color: #fff;">${escapeHtml(w.username)}</span>
                 ${isMe ? '<span class="user-dir-you-badge">You</span>' : ''}
               </div>
-              <div style="margin-top: 0.2rem;">
+              <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.45rem;">
                 <span class="watcher-rank-tag">
                   <i class="fa-solid fa-trophy"></i> #${w.rank || 1}
                 </span>
+                ${w.totalWatched ? `
+                  <span style="font-size: 0.75rem; color: var(--text-dim);" title="Total anime watched">
+                    (${w.totalWatched} watched)
+                  </span>
+                ` : ''}
               </div>
             </div>
           </div>
