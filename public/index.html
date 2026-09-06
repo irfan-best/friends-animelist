@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=4.8">
+  <link rel="stylesheet" href="style.css?v=5.1">
 </head>
 <body class="dark-theme">
 
@@ -107,35 +107,29 @@
         <div class="nav-bottom-row">
           <!-- Navigation Tabs -->
           <nav class="nav-tabs">
-            <button class="nav-tab active" data-view="watchlist" onclick="switchView('watchlist')">
+            <button class="nav-tab active" data-view="watchlist" onclick="switchView('watchlist')" title="My Watchlist">
               <i class="fa-solid fa-house"></i>
               <span>My Watchlist</span>
               <span id="nav-watched-badge" class="nav-counter">0</span>
             </button>
-            <button class="nav-tab" data-view="unwatched" onclick="switchView('unwatched')">
+            <button class="nav-tab" data-view="unwatched" onclick="switchView('unwatched')" title="Not Watched">
               <i class="fa-solid fa-clock"></i>
               <span>Not Watched</span>
               <span id="nav-unwatched-badge" class="nav-counter">0</span>
             </button>
-            <button class="nav-tab" data-view="browse" onclick="switchView('browse')">
+            <button class="nav-tab" data-view="browse" onclick="switchView('browse')" title="Browse Users">
               <i class="fa-solid fa-compass"></i>
               <span>Browse Users</span>
             </button>
-            <button class="nav-tab" data-view="compare" onclick="switchView('compare')">
+            <button class="nav-tab" data-view="compare" onclick="switchView('compare')" title="Compare Watchlists">
               <i class="fa-solid fa-code-compare"></i>
               <span>Compare Watchlists</span>
             </button>
+            <button class="nav-tab" data-view="leaderboard" onclick="switchView('leaderboard')" title="Leaderboard">
+              <i class="fa-solid fa-trophy"></i>
+              <span>Leaderboard</span>
+            </button>
           </nav>
-
-          <!-- Mobile Navigation Dropdown -->
-          <div class="mobile-nav-select-wrap">
-            <select id="mobile-nav-select" class="select-dropdown mobile-nav-select" onchange="switchView(this.value)">
-              <option value="watchlist">🏠 My Watchlist (0)</option>
-              <option value="unwatched">⏳ Not Watched (0)</option>
-              <option value="browse">🧭 Browse Users</option>
-              <option value="compare">⚔️ Compare Watchlists</option>
-            </select>
-          </div>
         </div>
       </div>
     </header>
@@ -156,6 +150,12 @@
             <button id="btn-mobile-reorder-cats" class="btn btn-outline btn-sm btn-icon" onclick="openReorderCategoriesModal()" title="Reorder Categories">
               <i class="fa-solid fa-arrow-down-up-across-line"></i>
             </button>
+            <button id="btn-mobile-rename-cat" class="btn btn-outline btn-sm btn-icon" onclick="openRenameCurrentCategoryMobile()" title="Rename Category">
+              <i class="fa-solid fa-pen-to-square"></i>
+            </button>
+            <button id="btn-mobile-delete-cat" class="btn btn-outline btn-danger btn-sm btn-icon" onclick="openDeleteCurrentCategoryMobile()" title="Delete Category">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
           </div>
         </div>
         <!-- Action Buttons Toolbar Below Categories -->
@@ -167,6 +167,36 @@
                 <option value="alpha-asc">ASC (A-Z)</option>
                 <option value="alpha-desc">DESC (Z-A)</option>
                 <option value="popularity-desc">Populary</option>
+                <option value="watched-desc">Watched Date (Newest First)</option>
+                <option value="watched-asc">Watched Date (Oldest First)</option>
+              </select>
+            </div>
+            <div id="watchlist-date-filter-wrap" class="date-filter-wrap">
+              <select id="watchlist-year-filter" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistYearChange(this.value)" title="Filter by Year">
+                <option value="all">All Years</option>
+              </select>
+              <select id="watchlist-period-filter" class="select-dropdown select-dropdown-sm hidden" onchange="handleWatchlistPeriodChange(this.value)" title="Filter by Month or Season">
+                <option value="all">All Year</option>
+                <optgroup label="Seasons">
+                  <option value="season:winter">Winter</option>
+                  <option value="season:spring">Spring</option>
+                  <option value="season:summer">Summer</option>
+                  <option value="season:fall">Fall</option>
+                </optgroup>
+                <optgroup label="Months">
+                  <option value="month:1">January</option>
+                  <option value="month:2">February</option>
+                  <option value="month:3">March</option>
+                  <option value="month:4">April</option>
+                  <option value="month:5">May</option>
+                  <option value="month:6">June</option>
+                  <option value="month:7">July</option>
+                  <option value="month:8">August</option>
+                  <option value="month:9">September</option>
+                  <option value="month:10">October</option>
+                  <option value="month:11">November</option>
+                  <option value="month:12">December</option>
+                </optgroup>
               </select>
             </div>
             <button id="btn-open-watchlist-search" class="btn btn-sm btn-outline" onclick="openWatchlistSearch()" title="Search in Category (Space), All Images (Shift+Space)">
@@ -283,6 +313,9 @@
             <button id="browse-compare-btn" class="btn btn-accent btn-sm" onclick="compareWithSelectedUser()" title="Compare Watchlists with this member">
               <i class="fa-solid fa-code-compare"></i> <span>Compare</span>
             </button>
+            <button id="browse-leaderboard-btn" class="btn btn-outline btn-sm" onclick="switchView('leaderboard')" title="Community Leaderboard">
+              <i class="fa-solid fa-trophy" style="color: #f59e0b;"></i> <span>Leaderboard</span>
+            </button>
             <button id="btn-copy-displayed-browse" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
               <i class="fa-regular fa-copy"></i> <span>Copy List</span>
             </button>
@@ -310,6 +343,36 @@
                     <option value="alpha-asc">ASC (A-Z)</option>
                     <option value="alpha-desc">DESC (Z-A)</option>
                     <option value="popularity-desc">Populary</option>
+                    <option value="watched-desc">Watched Date (Newest First)</option>
+                    <option value="watched-asc">Watched Date (Oldest First)</option>
+                  </select>
+                </div>
+                <div id="browse-date-filter-wrap" class="date-filter-wrap">
+                  <select id="browse-year-filter" class="select-dropdown select-dropdown-sm" onchange="handleBrowseYearChange(this.value)" title="Filter by Year">
+                    <option value="all">All Years</option>
+                  </select>
+                  <select id="browse-period-filter" class="select-dropdown select-dropdown-sm hidden" onchange="handleBrowsePeriodChange(this.value)" title="Filter by Month or Season">
+                    <option value="all">All Year</option>
+                    <optgroup label="Seasons">
+                      <option value="season:winter">Winter</option>
+                      <option value="season:spring">Spring</option>
+                      <option value="season:summer">Summer</option>
+                      <option value="season:fall">Fall</option>
+                    </optgroup>
+                    <optgroup label="Months">
+                      <option value="month:1">January</option>
+                      <option value="month:2">February</option>
+                      <option value="month:3">March</option>
+                      <option value="month:4">April</option>
+                      <option value="month:5">May</option>
+                      <option value="month:6">June</option>
+                      <option value="month:7">July</option>
+                      <option value="month:8">August</option>
+                      <option value="month:9">September</option>
+                      <option value="month:10">October</option>
+                      <option value="month:11">November</option>
+                      <option value="month:12">December</option>
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -437,7 +500,8 @@
 
             <div class="sorting-box">
               <select id="common-sort" class="select-dropdown" onchange="renderCommonResults()" title="Sort Common Anime">
-                <option value="popularity-desc" selected>Populary</option>
+                <option value="least-rank" selected>Least Rank (Default)</option>
+                <option value="popularity-desc">Populary</option>
                 <option value="alpha-asc">ASC (A-Z)</option>
                 <option value="alpha-desc">DESC (Z-A)</option>
               </select>
@@ -454,6 +518,36 @@
             <div class="empty-icon"><i class="fa-solid fa-users"></i></div>
             <h3 id="common-empty-title">Select Multiple Friends</h3>
             <p id="common-empty-desc">Choose 2 or more friends above to reveal all the anime you've all watched together.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 5: LEADERBOARD -->
+      <section id="view-leaderboard" class="view-panel hidden">
+        <div class="view-header" style="margin-bottom: 1.25rem;">
+          <div class="view-title-wrap">
+            <h2 class="view-title"><i class="fa-solid fa-trophy" style="color: #f59e0b;"></i> Community Leaderboard</h2>
+            <p class="view-subtitle">Rankings of all members based on total anime watched</p>
+          </div>
+          <div class="view-actions">
+            <div class="search-box" style="max-width: 260px;">
+              <i class="fa-solid fa-magnifying-glass search-icon"></i>
+              <input type="text" id="leaderboard-search" class="form-input search-input" placeholder="Search members..." oninput="filterLeaderboardUsers()">
+            </div>
+          </div>
+        </div>
+
+        <!-- Leaderboard List Container -->
+        <div class="leaderboard-container glass-card" style="padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
+          <div class="leaderboard-header-row">
+            <span class="lb-col lb-col-rank">Rank</span>
+            <span class="lb-col lb-col-user">Member</span>
+            <span class="lb-col lb-col-stats">Watched Anime</span>
+            <span class="lb-col lb-col-cats">Categories</span>
+            <span class="lb-col lb-col-action">Action</span>
+          </div>
+          <div id="leaderboard-list" class="leaderboard-list">
+            <!-- Dynamically populated leaderboard rows -->
           </div>
         </div>
       </section>
@@ -1056,6 +1150,6 @@ Tensura</div>
   </div>
 
   <!-- Application Scripts -->
-  <script src="app.js?v=4.8"></script>
+  <script src="app.js?v=5.1"></script>
 </body>
 </html>

@@ -2426,13 +2426,36 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
 }
 
 @media (max-width: 768px) {
-  /* Replace top navbar tabs with mobile navigation dropdown */
+  /* Keep top navbar tabs visible with icons only on mobile */
   .nav-tabs {
+    display: flex !important;
+    justify-content: center;
+    width: 100%;
+    gap: 0.35rem !important;
+    padding: 0.25rem !important;
+    overflow-x: auto;
+  }
+  .nav-tabs .nav-tab {
+    padding: 0.5rem 0.65rem !important;
+    min-width: 0 !important;
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 0.25rem !important;
+  }
+  .nav-tabs .nav-tab span:not(.nav-counter) {
     display: none !important;
   }
+  .nav-tabs .nav-tab i {
+    font-size: 1.15rem !important;
+    margin: 0 !important;
+  }
+  .nav-tabs .nav-tab .nav-counter {
+    font-size: 0.65rem !important;
+    padding: 0.1rem 0.35rem !important;
+    margin-left: 0.15rem !important;
+  }
   .mobile-nav-select-wrap {
-    display: block;
-    width: 100%;
+    display: none !important;
   }
 
   /* Replace category chips with mobile category select dropdown */
@@ -2445,6 +2468,26 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
     display: block;
     margin-bottom: 0.5rem;
     width: 100%;
+  }
+  .mobile-cat-select-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+  }
+  .mobile-cat-select-row .mobile-cat-select {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+  }
+  .mobile-cat-select-row .btn-icon {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Dropdown box never trims values on phone */
@@ -3446,6 +3489,228 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
 .common-rank-chip .chip-rank {
   color: #fbbf24;
   font-weight: 700;
+}
+
+/* ==========================================================================
+   Date Filter & Watched Date Chips
+   ========================================================================== */
+.date-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+}
+
+.date-filter-wrap .select-dropdown {
+  padding: 0.32rem 0.65rem;
+  font-size: 0.8rem;
+  min-width: 100px;
+}
+
+.watched-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.725rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.watched-date-chip i {
+  color: var(--secondary);
+  font-size: 0.7rem;
+}
+
+/* ==========================================================================
+   LEADERBOARD VIEW STYLES
+   ========================================================================== */
+.leaderboard-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.leaderboard-header-row {
+  display: grid;
+  grid-template-columns: 80px 1.5fr 1fr 120px 140px;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 80px 1.5fr 1fr 120px 140px;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.leaderboard-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.leaderboard-row.is-current-user {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.lb-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 0.95rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+}
+
+.lb-rank-badge.rank-1 {
+  background: linear-gradient(135deg, #ffd700, #f59e0b);
+  color: #000;
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.45);
+}
+
+.lb-rank-badge.rank-2 {
+  background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+  color: #000;
+  box-shadow: 0 0 10px rgba(226, 232, 240, 0.3);
+}
+
+.lb-rank-badge.rank-3 {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(217, 119, 6, 0.35);
+}
+
+.lb-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lb-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.lb-user-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.lb-username {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lb-you-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.25);
+  color: #818cf8;
+  font-weight: 600;
+}
+
+.lb-joined {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.lb-stats-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lb-stats-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--secondary);
+}
+
+.lb-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.lb-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--secondary), var(--primary));
+  border-radius: 3px;
+}
+
+.lb-cats-cell {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .leaderboard-header-row {
+    display: none;
+  }
+  .leaderboard-row {
+    grid-template-columns: 44px 1fr auto;
+    gap: 0.75rem;
+    padding: 0.85rem;
+  }
+  .lb-cats-cell {
+    display: none;
+  }
+  .lb-bar-bg {
+    display: none;
+  }
+  .lb-stats-cell {
+    align-items: flex-end;
+  }
+  .lb-action-cell {
+    grid-column: 1 / -1;
+    margin-top: 0.25rem;
+  }
+  .lb-action-cell .btn {
+    width: 100%;
+  }
 }
 
 

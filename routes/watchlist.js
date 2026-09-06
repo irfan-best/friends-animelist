@@ -494,6 +494,11 @@ router.post('/add-anime', authenticateToken, async (req, res) => {
     // Track count before addition
     const oldCount = countTotalWatched(watchlist);
 
+    // Record watched date if not already present
+    if (typeof watchlist.hasWatchedDate === 'function' && !watchlist.hasWatchedDate(title)) {
+      watchlist.setWatchedDate(title, new Date());
+    }
+
     // Add anime to target category
     targetCategory.animes.push(title);
 
@@ -537,6 +542,10 @@ router.post('/remove-anime', authenticateToken, async (req, res) => {
 
     if (!removed) {
       return res.status(404).json({ error: `Anime "${title}" not found in your watchlist.` });
+    }
+
+    if (typeof watchlist.removeWatchedDate === 'function') {
+      watchlist.removeWatchedDate(title);
     }
 
     await watchlist.save();
@@ -587,10 +596,15 @@ router.post('/batch-add', authenticateToken, async (req, res) => {
       cat.animes = cat.animes.filter(a => !titlesSet.has(a.toLowerCase().trim()));
     }
 
-    // Add unique titles to target category
+    const batchNow = new Date();
+
+    // Add unique titles to target category and track watched date
     for (const title of normalizedTitles) {
       if (!targetCategory.animes.some(a => a.toLowerCase().trim() === title.toLowerCase())) {
         targetCategory.animes.push(title);
+      }
+      if (typeof watchlist.hasWatchedDate === 'function' && !watchlist.hasWatchedDate(title)) {
+        watchlist.setWatchedDate(title, batchNow);
       }
     }
 
@@ -625,6 +639,12 @@ router.post('/batch-remove', authenticateToken, async (req, res) => {
 
     for (const cat of watchlist.categories) {
       cat.animes = cat.animes.filter(a => !titlesSet.has(a.toLowerCase().trim()));
+    }
+
+    if (typeof watchlist.removeWatchedDate === 'function') {
+      for (const t of titlesSet) {
+        watchlist.removeWatchedDate(t);
+      }
     }
 
     await watchlist.save();
@@ -824,46 +844,48 @@ router.post('/import', authenticateToken, async (req, res) => {
       cat.animes = cat.animes.filter(a => !allImportedTitlesSet.has(a.toLowerCase().trim()));
     }
 
-    // Map of imported categories by lowercase name
-    const importedOrderMap = new Map();
-    cleanedBlocks.forEach((block, idx) => {
-      importedOrderMap.set(block.categoryName.toLowerCase(), idx);
-    });
+    // Update existing categories (preserve their existing order, only append unique new animes to the end)
+    // or append new categories to the end
+    const maxExistingOrder = watchlist.categories.reduce((max, c) => Math.max(max, c.order != null ? c.order : 0), -1);
+    let nextNewOrder = maxExistingOrder + 1;
 
-    // Update existing categories or create new ones
     for (const block of cleanedBlocks) {
+      const bLower = block.categoryName.toLowerCase();
       let existingCat = watchlist.categories.find(
-        c => c.categoryName.toLowerCase() === block.categoryName.toLowerCase()
+        c => c.categoryName.toLowerCase() === bLower
       );
 
       if (existingCat) {
         // Update casing
         existingCat.categoryName = block.categoryName;
-        // Append animes in exact requested order
+        // Append animes to the last in exact requested order
         for (const title of block.animes) {
           if (!existingCat.animes.some(a => a.toLowerCase().trim() === title.toLowerCase().trim())) {
             existingCat.animes.push(title);
           }
         }
       } else {
-        // Create new category
+        // Create new category appended to the end
         watchlist.categories.push({
           categoryName: block.categoryName,
-          order: watchlist.categories.length,
+          order: nextNewOrder++,
           animes: [...block.animes]
         });
       }
     }
 
-    // Reorder categories so imported categories appear in the exact order provided (0, 1, 2...),
-    // followed by any pre-existing categories that were not part of this import
-    watchlist.categories.sort((a, b) => {
-      const aLower = a.categoryName.toLowerCase();
-      const bLower = b.categoryName.toLowerCase();
-      const aImportIdx = importedOrderMap.has(aLower) ? importedOrderMap.get(aLower) : 10000 + (a.order || 0);
-      const bImportIdx = importedOrderMap.has(bLower) ? importedOrderMap.get(bLower) : 10000 + (b.order || 0);
-      return aImportIdx - bImportIdx;
-    });
+    // Ensure watched dates are tracked for imported animes
+    const importNow = new Date();
+    for (const block of cleanedBlocks) {
+      for (const title of (block.animes || [])) {
+        if (typeof watchlist.hasWatchedDate === 'function' && !watchlist.hasWatchedDate(title)) {
+          watchlist.setWatchedDate(title, importNow);
+        }
+      }
+    }
+
+    // Sort categories: existing categories preserve their exact order, new categories placed at the end
+    watchlist.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     // Normalize order index
     watchlist.categories.forEach((cat, idx) => {

@@ -195,6 +195,13 @@ router.put('/rename', authenticateToken, async (req, res) => {
           }
         }
       }
+      if (typeof wl.hasWatchedDate === 'function' && wl.hasWatchedDate(cleanOld)) {
+        const existing = (wl.animeWatchedDates || []).find(i => i && i.animeTitle && i.animeTitle.trim().toLowerCase() === cleanOld.toLowerCase());
+        const watchedAt = existing ? existing.watchedAt : new Date();
+        wl.removeWatchedDate(cleanOld);
+        wl.setWatchedDate(cleanNew, watchedAt);
+        modified = true;
+      }
       if (modified) {
         await wl.save();
         updatedUsersCount++;

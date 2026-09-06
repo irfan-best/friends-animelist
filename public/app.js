@@ -45,8 +45,14 @@ const state = {
   selectedAnimes: new Set(), // Set of selected anime titles
   activeCategoryFilter: 'all',
   batchActionType: null, // 'add' | 'move'
-  watchlistAllSort: localStorage.getItem('anix_watchlist_all_sort') || 'default', // 'default' | 'alpha-asc' | 'alpha-desc' | 'popularity-desc'
+  watchlistAllSort: localStorage.getItem('anix_watchlist_all_sort') || 'default', // 'default' | 'alpha-asc' | 'alpha-desc' | 'popularity-desc' | 'watched-desc' | 'watched-asc'
   browseAllSort: 'default',
+
+  // Date Filtering (Year & Month/Season)
+  dateFilter: {
+    watchlist: { year: 'all', period: 'all' },
+    browse: { year: 'all', period: 'all' }
+  },
 
   // Row focus tracking
   focusedRowIndex: -1,
@@ -445,7 +451,7 @@ function restoreViewFromUrl() {
     const pageParam = url.searchParams.get('page');
     const limitParam = url.searchParams.get('limit');
 
-    const validViews = ['watchlist', 'unwatched', 'browse', 'compare'];
+    const validViews = ['watchlist', 'unwatched', 'browse', 'compare', 'leaderboard'];
     const targetView = validViews.includes(viewParam) ? viewParam : 'watchlist';
 
     // Restore page and limit if present
@@ -567,6 +573,8 @@ function switchView(viewName, updateUrl = true) {
     renderBrowseView();
   } else if (viewName === 'compare') {
     renderCompareView();
+  } else if (viewName === 'leaderboard') {
+    renderLeaderboardView();
   }
 }
 
@@ -757,6 +765,110 @@ function handleUnwatchedSortChange() {
   renderUnwatchedView();
 }
 window.handleUnwatchedSortChange = handleUnwatchedSortChange;
+
+function formatWatchedDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+window.formatWatchedDate = formatWatchedDate;
+
+function populateYearFilterOptions(selectId, watchedDatesMap) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const currentVal = select.value || 'all';
+
+  const yearsSet = new Set();
+  if (watchedDatesMap) {
+    for (const k in watchedDatesMap) {
+      const dateVal = watchedDatesMap[k];
+      if (dateVal) {
+        const d = new Date(dateVal);
+        if (!isNaN(d.getTime())) {
+          yearsSet.add(d.getFullYear());
+        }
+      }
+    }
+  }
+  yearsSet.add(new Date().getFullYear());
+  const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
+
+  const existingOptions = Array.from(select.options).map(o => o.value);
+  const newOptions = ['all', ...sortedYears.map(String)];
+  const optionsMatch = existingOptions.length === newOptions.length && existingOptions.every((v, i) => v === newOptions[i]);
+
+  if (!optionsMatch) {
+    select.innerHTML = '<option value="all">All Years</option>' +
+      sortedYears.map(y => `<option value="${y}">${y}</option>`).join('');
+  }
+  if (newOptions.includes(currentVal)) {
+    select.value = currentVal;
+  }
+}
+window.populateYearFilterOptions = populateYearFilterOptions;
+
+function handleWatchlistYearChange(year) {
+  state.dateFilter.watchlist.year = year;
+  const periodSelect = document.getElementById('watchlist-period-filter');
+  if (periodSelect) {
+    if (year === 'all') {
+      periodSelect.classList.add('hidden');
+      periodSelect.value = 'all';
+      state.dateFilter.watchlist.period = 'all';
+    } else {
+      periodSelect.classList.remove('hidden');
+    }
+  }
+  state.pagination.watchlist.page = 1;
+  renderWatchlistView();
+}
+window.handleWatchlistYearChange = handleWatchlistYearChange;
+
+function handleWatchlistPeriodChange(period) {
+  state.dateFilter.watchlist.period = period;
+  state.pagination.watchlist.page = 1;
+  renderWatchlistView();
+}
+window.handleWatchlistPeriodChange = handleWatchlistPeriodChange;
+
+function handleBrowseYearChange(year) {
+  state.dateFilter.browse.year = year;
+  const periodSelect = document.getElementById('browse-period-filter');
+  if (periodSelect) {
+    if (year === 'all') {
+      periodSelect.classList.add('hidden');
+      periodSelect.value = 'all';
+      state.dateFilter.browse.period = 'all';
+    } else {
+      periodSelect.classList.remove('hidden');
+    }
+  }
+  state.pagination.browse.page = 1;
+  if (state.browseSelectedUserId && state.browseUserWatchlist && state.communityUsers) {
+    const user = state.communityUsers.find(u => u._id === state.browseSelectedUserId);
+    if (user) {
+      renderBrowseWatchlistContent(user, state.browseUserWatchlist, getWatchedTitlesSet(state.browseUserWatchlist).size);
+      return;
+    }
+  }
+  renderBrowseView();
+}
+window.handleBrowseYearChange = handleBrowseYearChange;
+
+function handleBrowsePeriodChange(period) {
+  state.dateFilter.browse.period = period;
+  state.pagination.browse.page = 1;
+  if (state.browseSelectedUserId && state.browseUserWatchlist && state.communityUsers) {
+    const user = state.communityUsers.find(u => u._id === state.browseSelectedUserId);
+    if (user) {
+      renderBrowseWatchlistContent(user, state.browseUserWatchlist, getWatchedTitlesSet(state.browseUserWatchlist).size);
+      return;
+    }
+  }
+  renderBrowseView();
+}
+window.handleBrowsePeriodChange = handleBrowsePeriodChange;
 
 // Reusable Pagination Generator
 function renderPaginationControls(containerId, totalItems, viewName) {
@@ -1349,7 +1461,10 @@ function renderWatchlistView() {
       const meta = findAnimeMeta(anime.title);
       let card;
       if (cat) {
-        card = createWatchlistAnimeCard(anime.title, meta, cat._id, idx, matchedAnime.length, cat.categoryName, true);
+        const watchedDates = state.userWatchlist?.animeWatchedDates || {};
+        const wKey = anime.title.toLowerCase().trim();
+        const watchedAt = watchedDates[wKey] || null;
+        card = createWatchlistAnimeCard(anime.title, meta, cat._id, idx, matchedAnime.length, cat.categoryName, true, watchedAt);
       } else {
         card = createBrowseAnimeCard(anime.title, idx, 'Unwatched');
       }
@@ -1376,34 +1491,84 @@ function renderWatchlistView() {
     }
   }
 
+  const dateFilterWrap = document.getElementById('watchlist-date-filter-wrap');
+  if (dateFilterWrap) {
+    dateFilterWrap.classList.toggle('hidden', !isAll);
+    if (isAll) {
+      populateYearFilterOptions('watchlist-year-filter', state.userWatchlist?.animeWatchedDates);
+      const yearSelect = document.getElementById('watchlist-year-filter');
+      const periodSelect = document.getElementById('watchlist-period-filter');
+      if (yearSelect && state.dateFilter.watchlist.year) {
+        yearSelect.value = state.dateFilter.watchlist.year;
+      }
+      if (periodSelect) {
+        periodSelect.classList.toggle('hidden', state.dateFilter.watchlist.year === 'all');
+        if (state.dateFilter.watchlist.period) {
+          periodSelect.value = state.dateFilter.watchlist.period;
+        }
+      }
+    }
+  }
+
   if (isAll) {
     // ----------------------------------------------------
     // UNIFIED "ALL" CATEGORIES VIEW:
     // Show all watched anime side-by-side in a continuous grid without category separation
     // ----------------------------------------------------
+    const watchedDates = state.userWatchlist?.animeWatchedDates || {};
     const allWatched = [];
     sortedCats.forEach(cat => {
       (cat.animes || []).forEach((animeTitle, animeIdx) => {
         if (!query || animeTitle.toLowerCase().includes(query)) {
+          const wKey = animeTitle.toLowerCase().trim();
+          const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
           allWatched.push({
             title: animeTitle,
             categoryId: cat._id,
             categoryName: cat.categoryName,
             catIndex: animeIdx,
-            totalInCat: cat.animes.length
+            totalInCat: cat.animes.length,
+            watchedAt
           });
         }
       });
     });
 
+    // Apply Year and Period (Month/Season) filtering
+    let filteredWatched = allWatched;
+    const filter = state.dateFilter.watchlist;
+    if (filter && filter.year !== 'all') {
+      filteredWatched = filteredWatched.filter(item => {
+        if (!item.watchedAt) return false;
+        const d = new Date(item.watchedAt);
+        if (isNaN(d.getTime())) return false;
+        if (d.getFullYear().toString() !== filter.year.toString()) return false;
+
+        if (filter.period && filter.period !== 'all') {
+          const month = d.getMonth() + 1; // 1 to 12
+          if (filter.period.startsWith('season:')) {
+            const season = filter.period.replace('season:', '').toLowerCase();
+            if (season === 'winter' && (month < 1 || month > 3)) return false;
+            if (season === 'spring' && (month < 4 || month > 6)) return false;
+            if (season === 'summer' && (month < 7 || month > 9)) return false;
+            if (season === 'fall' && (month < 10 || month > 12)) return false;
+          } else if (filter.period.startsWith('month:')) {
+            const targetMonth = parseInt(filter.period.replace('month:', ''), 10);
+            if (month !== targetMonth) return false;
+          }
+        }
+        return true;
+      });
+    }
+
     // Apply sorting to the "All" category view
     const sortVal = state.watchlistAllSort || 'default';
     if (sortVal === 'alpha-asc') {
-      allWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+      filteredWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
     } else if (sortVal === 'alpha-desc') {
-      allWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+      filteredWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
     } else if (sortVal === 'popularity-desc') {
-      allWatched.sort((a, b) => {
+      filteredWatched.sort((a, b) => {
         const keyA = a.title.toLowerCase().trim();
         const keyB = b.title.toLowerCase().trim();
         const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
@@ -1418,15 +1583,29 @@ function renderWatchlistView() {
 
         return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
       });
+    } else if (sortVal === 'watched-desc') {
+      filteredWatched.sort((a, b) => {
+        const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+        const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+        if (tB !== tA) return tB - tA;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'watched-asc') {
+      filteredWatched.sort((a, b) => {
+        const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+        const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+        if (tA !== tB) return tA - tB;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
     }
 
-    const totalItems = allWatched.length;
+    const totalItems = filteredWatched.length;
     if (totalItems === 0) {
       container.innerHTML = `
         <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
           <i class="fa-solid fa-magnifying-glass" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
           <h4 style="color: #fff; margin-bottom: 0.25rem;">No Anime Found</h4>
-          <p style="color: var(--text-muted);">${query ? `No anime matching "<strong>${escapeHtml(query)}</strong>" in your watchlist.` : `You haven't added any anime yet. Go to <a href="#" onclick="switchView('unwatched'); return false;" style="color: var(--secondary); text-decoration: underline;">Not Watched</a> to add anime to your categories!`}</p>
+          <p style="color: var(--text-muted);">${query ? `No anime matching "<strong>${escapeHtml(query)}</strong>" in your watchlist.` : (filter && filter.year !== 'all' ? `No anime watched matching the selected date filter.` : `You haven't added any anime yet. Go to <a href="#" onclick="switchView('unwatched'); return false;" style="color: var(--secondary); text-decoration: underline;">Not Watched</a> to add anime to your categories!`)}</p>
           ${query ? `<button class="btn btn-sm btn-outline" style="margin-top: 0.75rem;" onclick="toggleWatchlistSearchScope()"><i class="fa-solid fa-globe"></i> Search All Images (Shift+Space)</button>` : ''}
         </div>
       `;
@@ -1441,7 +1620,7 @@ function renderWatchlistView() {
     const effectivePage = Math.min(page, totalPages);
     state.pagination.watchlist.page = effectivePage;
 
-    const pagedWatched = allWatched.slice((effectivePage - 1) * limit, effectivePage * limit);
+    const pagedWatched = filteredWatched.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid all-animes-grid';
@@ -1455,9 +1634,10 @@ function renderWatchlistView() {
         meta,
         item.categoryId,
         globalIdx,
-        allWatched.length,
+        filteredWatched.length,
         item.categoryName,
-        true // isAllView
+        true, // isAllView
+        item.watchedAt
       );
       grid.appendChild(card);
     });
@@ -1527,10 +1707,13 @@ function renderWatchlistView() {
     grid.ondragleave = (e) => handleDragLeave(e);
     grid.ondrop = (e) => handleDrop(e, cat._id);
 
+    const watchedDates = state.userWatchlist?.animeWatchedDates || {};
     pagedAnimes.forEach((animeTitle, pageLocalIdx) => {
       const animeIdx = (effectivePage - 1) * limit + pageLocalIdx;
       const meta = findAnimeMeta(animeTitle);
-      const card = createWatchlistAnimeCard(animeTitle, meta, cat._id, animeIdx, displayedAnimes.length, null, false);
+      const wKey = animeTitle.toLowerCase().trim();
+      const watchedAt = watchedDates[wKey] || null;
+      const card = createWatchlistAnimeCard(animeTitle, meta, cat._id, animeIdx, displayedAnimes.length, null, false, watchedAt);
       grid.appendChild(card);
     });
 
@@ -1559,7 +1742,7 @@ function alignGridRowPosters() {
 }
 window.alignGridRowPosters = alignGridRowPosters;
 
-function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, categoryName = null, isAllView = false) {
+function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, categoryName = null, isAllView = false, watchedAt = null) {
   const isSortDisabled = isAllView && state.watchlistAllSort && state.watchlistAllSort !== 'default';
   const card = document.createElement('div');
   card.className = 'anime-card';
@@ -3394,26 +3577,76 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
     }
   }
 
+  const dateFilterWrap = document.getElementById('browse-date-filter-wrap');
+  if (dateFilterWrap) {
+    dateFilterWrap.classList.toggle('hidden', !isAll);
+    if (isAll) {
+      populateYearFilterOptions('browse-year-filter', watchlist?.animeWatchedDates);
+      const yearSelect = document.getElementById('browse-year-filter');
+      const periodSelect = document.getElementById('browse-period-filter');
+      if (yearSelect && state.dateFilter.browse.year) {
+        yearSelect.value = state.dateFilter.browse.year;
+      }
+      if (periodSelect) {
+        periodSelect.classList.toggle('hidden', state.dateFilter.browse.year === 'all');
+        if (state.dateFilter.browse.period) {
+          periodSelect.value = state.dateFilter.browse.period;
+        }
+      }
+    }
+  }
+
   if (isAll) {
+    const watchedDates = watchlist.animeWatchedDates || {};
     const allWatched = [];
     sortedCats.forEach(cat => {
       (cat.animes || []).forEach((animeTitle, animeIdx) => {
+        const wKey = animeTitle.toLowerCase().trim();
+        const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
         allWatched.push({
           title: animeTitle,
           categoryId: cat._id,
           categoryName: cat.categoryName,
-          catIndex: animeIdx
+          catIndex: animeIdx,
+          watchedAt
         });
       });
     });
 
+    // Apply Year and Period (Month/Season) filtering
+    let filteredWatched = allWatched;
+    const filter = state.dateFilter.browse;
+    if (filter && filter.year !== 'all') {
+      filteredWatched = filteredWatched.filter(item => {
+        if (!item.watchedAt) return false;
+        const d = new Date(item.watchedAt);
+        if (isNaN(d.getTime())) return false;
+        if (d.getFullYear().toString() !== filter.year.toString()) return false;
+
+        if (filter.period && filter.period !== 'all') {
+          const month = d.getMonth() + 1; // 1 to 12
+          if (filter.period.startsWith('season:')) {
+            const season = filter.period.replace('season:', '').toLowerCase();
+            if (season === 'winter' && (month < 1 || month > 3)) return false;
+            if (season === 'spring' && (month < 4 || month > 6)) return false;
+            if (season === 'summer' && (month < 7 || month > 9)) return false;
+            if (season === 'fall' && (month < 10 || month > 12)) return false;
+          } else if (filter.period.startsWith('month:')) {
+            const targetMonth = parseInt(filter.period.replace('month:', ''), 10);
+            if (month !== targetMonth) return false;
+          }
+        }
+        return true;
+      });
+    }
+
     const sortVal = state.browseAllSort || 'default';
     if (sortVal === 'alpha-asc') {
-      allWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+      filteredWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
     } else if (sortVal === 'alpha-desc') {
-      allWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+      filteredWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
     } else if (sortVal === 'popularity-desc') {
-      allWatched.sort((a, b) => {
+      filteredWatched.sort((a, b) => {
         const keyA = a.title.toLowerCase().trim();
         const keyB = b.title.toLowerCase().trim();
         const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
@@ -3428,15 +3661,29 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
 
         return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
       });
+    } else if (sortVal === 'watched-desc') {
+      filteredWatched.sort((a, b) => {
+        const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+        const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+        if (tB !== tA) return tB - tA;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'watched-asc') {
+      filteredWatched.sort((a, b) => {
+        const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+        const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+        if (tA !== tB) return tA - tB;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
     }
 
-    const totalItems = allWatched.length;
+    const totalItems = filteredWatched.length;
     if (totalItems === 0) {
       container.innerHTML = `
         <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
           <i class="fa-regular fa-folder-open" style="font-size: 2.5rem; color: var(--text-dim); margin-bottom: 0.75rem;"></i>
           <h4 style="color: #fff; margin-bottom: 0.25rem;">No Anime in Watchlist</h4>
-          <p style="color: var(--text-muted);">${escapeHtml(user.username)} hasn't added any anime to their categories yet.</p>
+          <p style="color: var(--text-muted);">${filter && filter.year !== 'all' ? 'No anime watched matching the selected date filter.' : `${escapeHtml(user.username)} hasn't added any anime to their categories yet.`}</p>
         </div>
       `;
       renderPaginationControls('browse-pagination', 0, 'browse');
@@ -3449,7 +3696,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
     const effectivePage = Math.min(page, totalPages);
     state.pagination.browse.page = effectivePage;
 
-    const pagedWatched = allWatched.slice((effectivePage - 1) * limit, effectivePage * limit);
+    const pagedWatched = filteredWatched.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid all-animes-grid';
@@ -3457,7 +3704,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
 
     pagedWatched.forEach((item, pageLocalIdx) => {
       const globalIdx = (effectivePage - 1) * limit + pageLocalIdx;
-      const card = createBrowseAnimeCard(item.title, globalIdx, item.categoryName);
+      const card = createBrowseAnimeCard(item.title, globalIdx, item.categoryName, item.watchedAt);
       grid.appendChild(card);
     });
 
@@ -3498,9 +3745,12 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
     grid.className = 'anime-grid single-category-grid';
     grid.id = `browse-cat-${cat._id}`;
 
+    const watchedDates = watchlist.animeWatchedDates || {};
     pagedAnimes.forEach((animeTitle, pageLocalIdx) => {
       const idx = (effectivePage - 1) * limit + pageLocalIdx;
-      const card = createBrowseAnimeCard(animeTitle, idx, null);
+      const wKey = animeTitle.toLowerCase().trim();
+      const watchedAt = watchedDates[wKey] || null;
+      const card = createBrowseAnimeCard(animeTitle, idx, null, watchedAt);
       grid.appendChild(card);
     });
 
@@ -3511,7 +3761,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
   triggerGridRowAlignment();
 }
 
-function createBrowseAnimeCard(animeTitle, idx, categoryName = null) {
+function createBrowseAnimeCard(animeTitle, idx, categoryName = null, watchedAt = null) {
   const meta = findAnimeMeta(animeTitle);
   const popCount = state.globalStats[animeTitle] || 0;
 
@@ -3725,9 +3975,6 @@ function renderCompareResults() {
       </div>
       <div class="card-content">
         <h4 class="anime-title" title="${escapeAttr(item.title)}">${escapeHtml(item.title)}</h4>
-        <div class="card-meta">
-          <span class="text-highlight"><i class="fa-solid fa-folder"></i> In "${escapeHtml(item.destCategory)}"${item.destCatRank ? ` (#${item.destCatRank})` : ''}</span>
-        </div>
         ${isSourceCurrentUser ? `
           <div class="card-actions">
             <button class="btn btn-accent btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
@@ -3912,10 +4159,28 @@ function renderCommonResults() {
   if (sub) sub.textContent = `Common to ${firstNames} (${users.length} friends)`;
 
   // Sort common animes
-  const sortVal = sortSelect ? sortSelect.value : 'popularity-desc';
+  const sortVal = sortSelect ? sortSelect.value : 'least-rank';
   const sorted = [...commonAnimes];
 
-  if (sortVal === 'alpha-asc') {
+  if (sortVal === 'least-rank') {
+    sorted.sort((a, b) => {
+      const minA = Math.min(...(a.userBreakdown || []).map(u => (u.rank != null ? u.rank : Infinity)));
+      const minB = Math.min(...(b.userBreakdown || []).map(u => (u.rank != null ? u.rank : Infinity)));
+      if (minA !== minB) return minA - minB;
+
+      const sumA = (a.userBreakdown || []).reduce((acc, u) => acc + (u.rank != null ? u.rank : 999999), 0);
+      const sumB = (b.userBreakdown || []).reduce((acc, u) => acc + (u.rank != null ? u.rank : 999999), 0);
+      if (sumA !== sumB) return sumA - sumB;
+
+      const keyA = a.title.toLowerCase().trim();
+      const keyB = b.title.toLowerCase().trim();
+      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+      if (popB !== popA) return popB - popA;
+
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    });
+  } else if (sortVal === 'alpha-asc') {
     sorted.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
   } else if (sortVal === 'alpha-desc') {
     sorted.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
@@ -3991,7 +4256,7 @@ function renderCommonResults() {
         ` : `
           <div class="card-actions">
             <button class="btn btn-outline btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
-              <i class="fa-solid fa-folder"></i> In "${escapeHtml(cat.categoryName)}"
+              <i class="fa-solid fa-circle-check"></i> In Watchlist
             </button>
           </div>
         `}
@@ -4464,6 +4729,12 @@ function renderReorderCategoriesList() {
           <button class="btn btn-icon btn-sm btn-outline reorder-down-btn" onclick="handleReorderCategoryClick('${cat._id}', 1)" title="Move Down" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
             <i class="fa-solid fa-arrow-down"></i>
           </button>
+          <button class="btn btn-icon btn-sm btn-outline" onclick="closeModal('modal-reorder-categories'); openEditCategoryModal('${cat._id}', '${escapeJsAttr(cat.categoryName)}')" title="Rename Category">
+            <i class="fa-solid fa-pen-to-square"></i>
+          </button>
+          <button class="btn btn-icon btn-sm btn-danger" onclick="closeModal('modal-reorder-categories'); openDeleteCategoryModal('${cat._id}', '${escapeJsAttr(cat.categoryName)}')" title="Delete Category">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
         </div>
       </div>
     `;
@@ -4475,8 +4746,40 @@ async function handleReorderCategoryClick(categoryId, direction) {
   renderReorderCategoriesList();
 }
 
+function openRenameCurrentCategoryMobile() {
+  const currentCatId = state.activeCategoryFilter;
+  if (!currentCatId || currentCatId === 'all') {
+    showToast('Select a category from the dropdown or pick one below to rename.', 'info');
+    openReorderCategoriesModal();
+    return;
+  }
+  const cat = state.userWatchlist?.categories?.find(c => c._id === currentCatId);
+  if (cat) {
+    openEditCategoryModal(cat._id, cat.categoryName);
+  } else {
+    showToast('Category not found.', 'error');
+  }
+}
+
+function openDeleteCurrentCategoryMobile() {
+  const currentCatId = state.activeCategoryFilter;
+  if (!currentCatId || currentCatId === 'all') {
+    showToast('Select a category from the dropdown or pick one below to delete.', 'info');
+    openReorderCategoriesModal();
+    return;
+  }
+  const cat = state.userWatchlist?.categories?.find(c => c._id === currentCatId);
+  if (cat) {
+    openDeleteCategoryModal(cat._id, cat.categoryName);
+  } else {
+    showToast('Category not found.', 'error');
+  }
+}
+
 window.openReorderCategoriesModal = openReorderCategoriesModal;
 window.handleReorderCategoryClick = handleReorderCategoryClick;
+window.openRenameCurrentCategoryMobile = openRenameCurrentCategoryMobile;
+window.openDeleteCurrentCategoryMobile = openDeleteCurrentCategoryMobile;
 
 // ==========================================
 // MILESTONE CELEBRATORY NOTIFICATIONS
@@ -5448,5 +5751,131 @@ function initKeyboardShortcuts() {
     }
   });
 }
+
+// ==========================================
+// VIEW 5: COMMUNITY LEADERBOARD
+// ==========================================
+async function renderLeaderboardView() {
+  const container = document.getElementById('leaderboard-list');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div style="text-align:center; padding: 2.5rem; color: var(--text-muted);">
+      <i class="fa-solid fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 0.75rem;"></i>
+      <p>Loading leaderboard rankings...</p>
+    </div>
+  `;
+
+  try {
+    const res = await apiRequest('/api/users');
+    state.communityUsers = Array.isArray(res) ? res : (res?.users || []);
+    state.communityUsers.sort((a, b) => (b.totalWatched - a.totalWatched) || a.username.localeCompare(b.username));
+
+    const searchInput = document.getElementById('leaderboard-search');
+    if (searchInput && searchInput.value.trim()) {
+      filterLeaderboardUsers();
+    } else {
+      renderLeaderboardList(state.communityUsers);
+    }
+  } catch (err) {
+    container.innerHTML = `
+      <div style="text-align:center; padding: 2.5rem; color: var(--danger);">
+        <i class="fa-solid fa-triangle-exclamation" style="font-size: 2rem; margin-bottom: 0.75rem;"></i>
+        <p>Failed to load leaderboard: ${escapeHtml(err.message || 'Unknown error')}</p>
+      </div>
+    `;
+  }
+}
+
+function filterLeaderboardUsers() {
+  const input = document.getElementById('leaderboard-search');
+  const query = input ? input.value.trim().toLowerCase() : '';
+  if (!state.communityUsers) return;
+
+  if (!query) {
+    renderLeaderboardList(state.communityUsers);
+    return;
+  }
+
+  const filtered = state.communityUsers.filter(u => u.username.toLowerCase().includes(query));
+  renderLeaderboardList(filtered);
+}
+
+function renderLeaderboardList(usersList) {
+  const container = document.getElementById('leaderboard-list');
+  if (!container) return;
+
+  if (!usersList || usersList.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding: 2.5rem; color: var(--text-muted);">
+        <i class="fa-solid fa-users-slash" style="font-size: 2rem; margin-bottom: 0.75rem;"></i>
+        <p>No members found matching your search.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const maxWatched = Math.max(1, ...(state.communityUsers || []).map(u => u.totalWatched || 0));
+
+  container.innerHTML = usersList.map((user) => {
+    const actualRank = (state.communityUsers || []).findIndex(u => u._id === user._id) + 1;
+    const isMe = Boolean(state.currentUser && user._id === state.currentUser._id);
+    const initial = (user.username || 'U').charAt(0).toUpperCase();
+
+    let rankBadgeClass = '';
+    let rankIcon = '';
+    if (actualRank === 1) {
+      rankBadgeClass = 'rank-1';
+      rankIcon = '<i class="fa-solid fa-crown" style="font-size: 0.85rem; margin-right: 2px;"></i>';
+    } else if (actualRank === 2) {
+      rankBadgeClass = 'rank-2';
+      rankIcon = '<i class="fa-solid fa-medal" style="font-size: 0.85rem; margin-right: 2px;"></i>';
+    } else if (actualRank === 3) {
+      rankBadgeClass = 'rank-3';
+      rankIcon = '<i class="fa-solid fa-medal" style="font-size: 0.85rem; margin-right: 2px;"></i>';
+    }
+
+    const pct = Math.round(((user.totalWatched || 0) / maxWatched) * 100);
+    const joinedDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
+
+    return `
+      <div class="leaderboard-row ${isMe ? 'is-current-user' : ''}">
+        <div class="lb-col lb-col-rank">
+          <div class="lb-rank-badge ${rankBadgeClass}">
+            ${rankIcon ? rankIcon : ''}${actualRank}
+          </div>
+        </div>
+        <div class="lb-col lb-col-user lb-user-cell">
+          <div class="lb-avatar">${initial}</div>
+          <div class="lb-user-details">
+            <span class="lb-username">
+              ${escapeHtml(user.username)}
+              ${isMe ? '<span class="lb-you-badge">You</span>' : ''}
+            </span>
+            ${joinedDate ? `<span class="lb-joined">Member since ${joinedDate}</span>` : ''}
+          </div>
+        </div>
+        <div class="lb-col lb-col-stats lb-stats-cell">
+          <span class="lb-stats-value">${user.totalWatched || 0} anime</span>
+          <div class="lb-bar-bg">
+            <div class="lb-bar-fill" style="width: ${pct}%;"></div>
+          </div>
+        </div>
+        <div class="lb-col lb-col-cats lb-cats-cell">
+          ${user.totalCategories || 0} categories
+        </div>
+        <div class="lb-col lb-col-action lb-action-cell">
+          <button class="btn btn-sm btn-outline btn-block" onclick="inspectUserWatchlist('${user._id}')" title="Inspect ${escapeAttr(user.username)}'s watchlist">
+            <i class="fa-solid fa-compass"></i> View Watchlist
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.renderLeaderboardView = renderLeaderboardView;
+window.filterLeaderboardUsers = filterLeaderboardUsers;
+window.renderLeaderboardList = renderLeaderboardList;
 
 
