@@ -599,12 +599,19 @@ body {
 
 .sub-header-toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  width: 100%;
+}
+
+.sub-header-toolbar-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
-  flex-wrap: wrap;
-  padding-top: 0.45rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  width: 100%;
 }
 
 .sub-header-toolbar-left {
@@ -620,6 +627,20 @@ body {
   gap: 0.6rem;
   flex-wrap: wrap;
   margin-left: auto;
+}
+
+.sub-header-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.sub-header-search-row .watchlist-search-box {
+  width: 100%;
+  max-width: 600px;
+  margin-right: auto;
+  padding: 0.35rem 0.75rem;
 }
 
 .sub-cat-chip {
@@ -2523,6 +2544,13 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
     width: 100%;
     gap: 0.6rem;
   }
+  .sub-header-toolbar-row {
+    flex-direction: column;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100%;
+    gap: 0.5rem;
+  }
   .sub-header-toolbar-left,
   .sub-header-toolbar-right {
     display: flex;
@@ -2531,6 +2559,14 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
     flex-wrap: wrap;
     gap: 0.5rem;
     width: 100%;
+  }
+  .sub-header-search-row {
+    width: 100%;
+    justify-content: center;
+  }
+  .sub-header-search-row .watchlist-search-box {
+    max-width: 100% !important;
+    width: 100% !important;
   }
 
   /* "Mark Watched" text stays strictly on a single line */
@@ -3505,6 +3541,12 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
   padding: 0.32rem 0.65rem;
   font-size: 0.8rem;
   min-width: 100px;
+}
+
+@media (max-width: 760px) {
+  .date-filter-wrap .select-dropdown {
+    height: 40px;
+  }
 }
 
 .watched-date-chip {

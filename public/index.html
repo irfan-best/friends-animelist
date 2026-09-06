@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?v=5.1">
+  <link rel="stylesheet" href="style.css?v=5.4">
 </head>
 <body class="dark-theme">
 
@@ -160,66 +160,73 @@
         </div>
         <!-- Action Buttons Toolbar Below Categories -->
         <div class="sub-header-toolbar">
-          <div class="sub-header-toolbar-left">
-            <div id="watchlist-all-sort-wrap" class="sorting-box watchlist-all-sorting">
-              <select id="watchlist-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistAllSortChange()" title="Sort Watchlist">
-                <option value="default">Category Order (Default)</option>
-                <option value="alpha-asc">ASC (A-Z)</option>
-                <option value="alpha-desc">DESC (Z-A)</option>
-                <option value="popularity-desc">Populary</option>
-                <option value="watched-desc">Watched Date (Newest First)</option>
-                <option value="watched-asc">Watched Date (Oldest First)</option>
-              </select>
+          <!-- Row 1: Sort dropdown & Year Filter on left, Action buttons on right -->
+          <div class="sub-header-toolbar-row">
+            <div class="sub-header-toolbar-left">
+              <div id="watchlist-all-sort-wrap" class="sorting-box watchlist-all-sorting">
+                <select id="watchlist-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistAllSortChange()" title="Sort Watchlist">
+                  <option value="default">Category Order (Default)</option>
+                  <option value="alpha-asc">ASC (A-Z)</option>
+                  <option value="alpha-desc">DESC (Z-A)</option>
+                  <option value="popularity-desc">Populary</option>
+                  <option value="watched-desc">Watched Date (Newest First)</option>
+                  <option value="watched-asc">Watched Date (Oldest First)</option>
+                </select>
+              </div>
+              <div id="watchlist-date-filter-wrap" class="date-filter-wrap">
+                <select id="watchlist-year-filter" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistYearChange(this.value)" title="Filter by Year">
+                  <option value="all">All Years</option>
+                </select>
+                <select id="watchlist-period-filter" class="select-dropdown select-dropdown-sm hidden" onchange="handleWatchlistPeriodChange(this.value)" title="Filter by Month or Season">
+                  <option value="all">All Year</option>
+                  <optgroup label="Seasons">
+                    <option value="season:winter">Winter</option>
+                    <option value="season:spring">Spring</option>
+                    <option value="season:summer">Summer</option>
+                    <option value="season:fall">Fall</option>
+                  </optgroup>
+                  <optgroup label="Months">
+                    <option value="month:1">January</option>
+                    <option value="month:2">February</option>
+                    <option value="month:3">March</option>
+                    <option value="month:4">April</option>
+                    <option value="month:5">May</option>
+                    <option value="month:6">June</option>
+                    <option value="month:7">July</option>
+                    <option value="month:8">August</option>
+                    <option value="month:9">September</option>
+                    <option value="month:10">October</option>
+                    <option value="month:11">November</option>
+                    <option value="month:12">December</option>
+                  </optgroup>
+                </select>
+              </div>
             </div>
-            <div id="watchlist-date-filter-wrap" class="date-filter-wrap">
-              <select id="watchlist-year-filter" class="select-dropdown select-dropdown-sm" onchange="handleWatchlistYearChange(this.value)" title="Filter by Year">
-                <option value="all">All Years</option>
-              </select>
-              <select id="watchlist-period-filter" class="select-dropdown select-dropdown-sm hidden" onchange="handleWatchlistPeriodChange(this.value)" title="Filter by Month or Season">
-                <option value="all">All Year</option>
-                <optgroup label="Seasons">
-                  <option value="season:winter">Winter</option>
-                  <option value="season:spring">Spring</option>
-                  <option value="season:summer">Summer</option>
-                  <option value="season:fall">Fall</option>
-                </optgroup>
-                <optgroup label="Months">
-                  <option value="month:1">January</option>
-                  <option value="month:2">February</option>
-                  <option value="month:3">March</option>
-                  <option value="month:4">April</option>
-                  <option value="month:5">May</option>
-                  <option value="month:6">June</option>
-                  <option value="month:7">July</option>
-                  <option value="month:8">August</option>
-                  <option value="month:9">September</option>
-                  <option value="month:10">October</option>
-                  <option value="month:11">November</option>
-                  <option value="month:12">December</option>
-                </optgroup>
-              </select>
+            <div class="sub-header-toolbar-right">
+              <button id="btn-open-category-modal" class="btn btn-sm btn-accent btn-icon" onclick="openNewCategoryModal()" title="Create New Category">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+              <button id="btn-toggle-selection-watchlist" class="btn btn-sm btn-selection-toggle" onclick="toggleSelectionMode()">
+                <i class="fa-regular fa-square-check"></i> <span class="selection-toggle-text">Selection Mode: OFF</span>
+              </button>
+              <button id="btn-copy-displayed-watchlist" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
+                <i class="fa-regular fa-copy"></i> <span>Copy List</span>
+              </button>
             </div>
-            <button id="btn-open-watchlist-search" class="btn btn-sm btn-outline" onclick="openWatchlistSearch()" title="Search in Category (Space), All Images (Shift+Space)">
+          </div>
+
+          <!-- Row 2: Dedicated Search Box Row (Separate line from year filters) -->
+          <div class="sub-header-search-row">
+            <button id="btn-open-watchlist-search" class="btn btn-sm btn-outline hidden" onclick="openWatchlistSearch()" title="Search in Category (Space), All Images (Shift+Space)">
               <i class="fa-solid fa-magnifying-glass"></i> <span>Search</span>
             </button>
-            <div id="watchlist-search-wrap" class="search-box watchlist-search-box hidden">
+            <div id="watchlist-search-wrap" class="search-box watchlist-search-box">
               <i class="fa-solid fa-magnifying-glass"></i>
               <span id="watchlist-search-scope-badge" class="search-scope-badge" onclick="toggleWatchlistSearchScope()" title="Click to toggle Category / Global Search">Category</span>
               <input type="text" id="watchlist-search" placeholder="Search category (Space, Shift+Space: All)..." oninput="handleWatchlistSearchInput()">
               <button id="clear-watchlist-search-btn" class="clear-btn hidden" onclick="clearWatchlistSearch()" title="Clear text"><i class="fa-solid fa-xmark"></i></button>
               <button class="close-search-box-btn" onclick="closeWatchlistSearch()" title="Close search (Esc)"><i class="fa-solid fa-xmark"></i></button>
             </div>
-          </div>
-          <div class="sub-header-toolbar-right">
-            <button id="btn-open-category-modal" class="btn btn-sm btn-accent btn-icon" onclick="openNewCategoryModal()" title="Create New Category">
-              <i class="fa-solid fa-plus"></i>
-            </button>
-            <button id="btn-toggle-selection-watchlist" class="btn btn-sm btn-selection-toggle" onclick="toggleSelectionMode()">
-              <i class="fa-regular fa-square-check"></i> <span class="selection-toggle-text">Selection Mode: OFF</span>
-            </button>
-            <button id="btn-copy-displayed-watchlist" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
-              <i class="fa-regular fa-copy"></i> <span>Copy List</span>
-            </button>
           </div>
         </div>
       </div>
@@ -336,44 +343,46 @@
               </select>
             </div>
             <div id="browse-sub-header-toolbar" class="sub-header-toolbar" style="border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.45rem;">
-              <div class="sub-header-toolbar-left">
-                <div id="browse-all-sort-wrap" class="sorting-box watchlist-all-sorting">
-                  <select id="browse-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleBrowseAllSortChange()" title="Sort Watchlist">
-                    <option value="default">Category Order (Default)</option>
-                    <option value="alpha-asc">ASC (A-Z)</option>
-                    <option value="alpha-desc">DESC (Z-A)</option>
-                    <option value="popularity-desc">Populary</option>
-                    <option value="watched-desc">Watched Date (Newest First)</option>
-                    <option value="watched-asc">Watched Date (Oldest First)</option>
-                  </select>
-                </div>
-                <div id="browse-date-filter-wrap" class="date-filter-wrap">
-                  <select id="browse-year-filter" class="select-dropdown select-dropdown-sm" onchange="handleBrowseYearChange(this.value)" title="Filter by Year">
-                    <option value="all">All Years</option>
-                  </select>
-                  <select id="browse-period-filter" class="select-dropdown select-dropdown-sm hidden" onchange="handleBrowsePeriodChange(this.value)" title="Filter by Month or Season">
-                    <option value="all">All Year</option>
-                    <optgroup label="Seasons">
-                      <option value="season:winter">Winter</option>
-                      <option value="season:spring">Spring</option>
-                      <option value="season:summer">Summer</option>
-                      <option value="season:fall">Fall</option>
-                    </optgroup>
-                    <optgroup label="Months">
-                      <option value="month:1">January</option>
-                      <option value="month:2">February</option>
-                      <option value="month:3">March</option>
-                      <option value="month:4">April</option>
-                      <option value="month:5">May</option>
-                      <option value="month:6">June</option>
-                      <option value="month:7">July</option>
-                      <option value="month:8">August</option>
-                      <option value="month:9">September</option>
-                      <option value="month:10">October</option>
-                      <option value="month:11">November</option>
-                      <option value="month:12">December</option>
-                    </optgroup>
-                  </select>
+              <div class="sub-header-toolbar-row">
+                <div class="sub-header-toolbar-left">
+                  <div id="browse-all-sort-wrap" class="sorting-box watchlist-all-sorting">
+                    <select id="browse-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleBrowseAllSortChange()" title="Sort Watchlist">
+                      <option value="default">Category Order (Default)</option>
+                      <option value="alpha-asc">ASC (A-Z)</option>
+                      <option value="alpha-desc">DESC (Z-A)</option>
+                      <option value="popularity-desc">Populary</option>
+                      <option value="watched-desc">Watched Date (Newest First)</option>
+                      <option value="watched-asc">Watched Date (Oldest First)</option>
+                    </select>
+                  </div>
+                  <div id="browse-date-filter-wrap" class="date-filter-wrap">
+                    <select id="browse-year-filter" class="select-dropdown select-dropdown-sm" onchange="handleBrowseYearChange(this.value)" title="Filter by Year">
+                      <option value="all">All Years</option>
+                    </select>
+                    <select id="browse-period-filter" class="select-dropdown select-dropdown-sm hidden" onchange="handleBrowsePeriodChange(this.value)" title="Filter by Month or Season">
+                      <option value="all">All Year</option>
+                      <optgroup label="Seasons">
+                        <option value="season:winter">Winter</option>
+                        <option value="season:spring">Spring</option>
+                        <option value="season:summer">Summer</option>
+                        <option value="season:fall">Fall</option>
+                      </optgroup>
+                      <optgroup label="Months">
+                        <option value="month:1">January</option>
+                        <option value="month:2">February</option>
+                        <option value="month:3">March</option>
+                        <option value="month:4">April</option>
+                        <option value="month:5">May</option>
+                        <option value="month:6">June</option>
+                        <option value="month:7">July</option>
+                        <option value="month:8">August</option>
+                        <option value="month:9">September</option>
+                        <option value="month:10">October</option>
+                        <option value="month:11">November</option>
+                        <option value="month:12">December</option>
+                      </optgroup>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1150,6 +1159,6 @@ Tensura</div>
   </div>
 
   <!-- Application Scripts -->
-  <script src="app.js?v=5.2"></script>
+  <script src="app.js?v=5.3"></script>
 </body>
 </html>
