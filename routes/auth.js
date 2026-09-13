@@ -3,6 +3,17 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Watchlist = require('../models/Watchlist');
+const LoginHistory = require('../models/LoginHistory');
+
+function isLocalhostIp(ip) {
+  if (!ip) return true;
+  const cleaned = String(ip).trim().toLowerCase().replace(/^::ffff:/, '');
+  return cleaned === '127.0.0.1' ||
+         cleaned === '::1' ||
+         cleaned === 'localhost' ||
+         cleaned === '0.0.0.0' ||
+         cleaned.startsWith('127.');
+}
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
 
 // POST /api/register
@@ -53,6 +64,22 @@ router.post('/register', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '30d' }
     );
+
+    // Record login history (ignore localhost)
+    try {
+      const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '';
+      const userAgent = req.headers['user-agent'] || '';
+      if (!isLocalhostIp(clientIp)) {
+        await LoginHistory.create({
+          userId: newUser._id,
+          username: newUser.username,
+          ip: String(clientIp),
+          userAgent: String(userAgent)
+        });
+      }
+    } catch (logErr) {
+      console.error('Error logging register history:', logErr);
+    }
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -114,6 +141,22 @@ router.post('/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '30d' }
     );
+
+    // Record login history (ignore localhost)
+    try {
+      const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '';
+      const userAgent = req.headers['user-agent'] || '';
+      if (!isLocalhostIp(clientIp)) {
+        await LoginHistory.create({
+          userId: user._id,
+          username: user.username,
+          ip: String(clientIp),
+          userAgent: String(userAgent)
+        });
+      }
+    } catch (logErr) {
+      console.error('Error logging login history:', logErr);
+    }
 
     res.json({
       message: 'Login successful',
@@ -255,6 +298,34 @@ router.put('/admin/users/:id/password', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error updating user password:', err);
     res.status(500).json({ error: err.message || 'Failed to update user password.' });
+  }
+});
+
+// GET /api/admin/login-history -> Fetch recent login history of all users (Authorized: Irfan Yoichi only)
+router.get('/admin/login-history', authenticateToken, async (req, res) => {
+  try {
+    const authUsername = (req.user && req.user.username) ? req.user.username.trim().toLowerCase() : '';
+    if (authUsername !== 'irfan yoichi') {
+      return res.status(403).json({ error: "Access denied. Only user 'Irfan Yoichi' can access login history." });
+    }
+
+    const localhostRegex = /^(::ffff:)?(127\.|0\.0\.0\.0|::1|localhost)/i;
+    const history = await LoginHistory.find({
+      $and: [
+        { ip: { $ne: null } },
+        { ip: { $ne: '' } },
+        { ip: { $not: localhostRegex } }
+      ]
+    })
+      .sort({ loginTime: -1 })
+      .limit(300)
+      .lean();
+
+    const nonLocalHistory = history.filter(item => !isLocalhostIp(item.ip));
+    res.json(nonLocalHistory);
+  } catch (err) {
+    console.error('Error fetching login history:', err);
+    res.status(500).json({ error: 'Failed to fetch login history.' });
   }
 });
 

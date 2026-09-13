@@ -84,6 +84,7 @@ watchlistSchema.methods.setWatchedDate = function(title, date = new Date()) {
   } else {
     this.animeWatchedDates.push({ animeTitle: clean, watchedAt: date });
   }
+  this.markModified('animeWatchedDates');
 };
 
 watchlistSchema.methods.removeWatchedDate = function(title) {
@@ -92,6 +93,7 @@ watchlistSchema.methods.removeWatchedDate = function(title) {
     this.animeWatchedDates = this.animeWatchedDates.filter(
       item => item && item.animeTitle && item.animeTitle.trim().toLowerCase() !== lower
     );
+    this.markModified('animeWatchedDates');
   }
 };
 

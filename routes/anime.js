@@ -56,17 +56,22 @@ router.get('/global-stats', async (req, res) => {
       }
     }
 
+    const avgRankMap = {};
     for (const key of Object.keys(statsDetails)) {
       const item = statsDetails[key];
       statsMap[item.title] = item.count;
       statsMap[key] = item.count;
       rankMap[item.title] = item.rankSum;
       rankMap[key] = item.rankSum;
+      const avg = item.count > 0 ? (item.rankSum / item.count) : Infinity;
+      avgRankMap[item.title] = avg;
+      avgRankMap[key] = avg;
     }
 
     res.json({
       stats: statsMap,
       rankStats: rankMap,
+      avgRankStats: avgRankMap,
       details: statsDetails
     });
   } catch (err) {

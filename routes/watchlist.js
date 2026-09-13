@@ -272,12 +272,25 @@ router.post('/common', async (req, res) => {
         rank: um.rankMap[key] || null
       }));
 
+      const validRanks = userBreakdown.map(u => u.rank).filter(r => typeof r === 'number' && !isNaN(r));
+      const avgRank = validRanks.length > 0 ? (validRanks.reduce((s, r) => s + r, 0) / validRanks.length) : Infinity;
+
       return {
         title: originalTitle,
         fileName: match ? match.fileName : `${originalTitle}.jpg`,
         imageUrl: match ? match.imageUrl : `/images/${encodeURIComponent(originalTitle)}.jpg`,
-        userBreakdown
+        userBreakdown,
+        avgRank
       };
+    });
+
+    // Default sort by average rank among common friends ascending
+    commonAnimes.sort((a, b) => {
+      if (a.avgRank !== b.avgRank) return a.avgRank - b.avgRank;
+      const minA = Math.min(...(a.userBreakdown || []).map(u => (u.rank != null ? u.rank : Infinity)));
+      const minB = Math.min(...(b.userBreakdown || []).map(u => (u.rank != null ? u.rank : Infinity)));
+      if (minA !== minB) return minA - minB;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
     });
 
     res.json({
@@ -288,6 +301,97 @@ router.post('/common', async (req, res) => {
   } catch (err) {
     console.error('Error finding common animes:', err);
     res.status(500).json({ error: 'Failed to find common anime.' });
+  }
+});
+
+// GET /api/watchlist/all-community-data -> Preload all users, watchlists, and community ranking stats in a single request
+router.get('/all-community-data', async (req, res) => {
+  try {
+    const users = await User.find({}, '_id username createdAt').lean();
+    const watchlists = await Watchlist.find({}).lean();
+
+    const countMap = new Map();
+    const catMap = new Map();
+    const watchlistsMap = {};
+
+    const statsMap = {};
+    const rankMap = {};
+    const avgRankMap = {};
+    const statsDetails = {};
+
+    for (const wl of watchlists) {
+      if (!wl.userId) continue;
+      const uid = wl.userId.toString();
+
+      // Sort categories according to their defined order
+      if (Array.isArray(wl.categories)) {
+        wl.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
+      }
+      watchlistsMap[uid] = wl;
+
+      const seen = new Set();
+      let currentRank = 0;
+
+      if (Array.isArray(wl.categories)) {
+        catMap.set(uid, wl.categories.length);
+        for (const cat of wl.categories) {
+          if (Array.isArray(cat.animes)) {
+            for (let i = 0; i < cat.animes.length; i++) {
+              currentRank++;
+              const title = (cat.animes[i] || '').trim();
+              if (!title) continue;
+              const key = title.toLowerCase();
+
+              if (!seen.has(key)) {
+                seen.add(key);
+                if (!statsDetails[key]) {
+                  statsDetails[key] = {
+                    title,
+                    count: 0,
+                    rankSum: 0
+                  };
+                }
+                statsDetails[key].count += 1;
+                statsDetails[key].rankSum += currentRank;
+              }
+            }
+          }
+        }
+      }
+      countMap.set(uid, seen.size);
+    }
+
+    for (const key of Object.keys(statsDetails)) {
+      const item = statsDetails[key];
+      statsMap[item.title] = item.count;
+      statsMap[key] = item.count;
+      rankMap[item.title] = item.rankSum;
+      rankMap[key] = item.rankSum;
+      const avg = item.count > 0 ? (item.rankSum / item.count) : Infinity;
+      avgRankMap[item.title] = avg;
+      avgRankMap[key] = avg;
+    }
+
+    const userList = users.map(u => ({
+      _id: u._id,
+      username: u.username,
+      createdAt: u.createdAt,
+      totalWatched: countMap.get(u._id.toString()) || 0,
+      totalCategories: catMap.get(u._id.toString()) || 0
+    }));
+
+    userList.sort((a, b) => (b.totalWatched - a.totalWatched) || a.username.localeCompare(b.username));
+
+    res.json({
+      users: userList,
+      watchlists: watchlistsMap,
+      globalStats: statsMap,
+      globalRankStats: rankMap,
+      globalAvgRankStats: avgRankMap
+    });
+  } catch (err) {
+    console.error('Error preloading community data:', err);
+    res.status(500).json({ error: 'Failed to preload community data.' });
   }
 });
 
@@ -791,7 +895,172 @@ router.put('/reorder', authenticateToken, async (req, res) => {
   }
 });
 
+function parseServerCustomDate(dateStr) {
+  if (!dateStr) return null;
+  const clean = String(dateStr).trim();
+  if (!clean) return null;
+
+  const MONTHS = {
+    jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2,
+    apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6,
+    aug: 7, august: 7, sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+  };
+
+  const m = clean.match(/^(\d{1,2})[\s\-]+([a-zA-Z]+)[\s\-]+(\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (m) {
+    const day = parseInt(m[1], 10);
+    const mStr = m[2].toLowerCase();
+    const year = parseInt(m[3], 10);
+    const hours = m[4] != null ? parseInt(m[4], 10) : 12;
+    const minutes = m[5] != null ? parseInt(m[5], 10) : 0;
+    const seconds = m[6] != null ? parseInt(m[6], 10) : 0;
+
+    if (MONTHS[mStr] !== undefined) {
+      const d = new Date(year, MONTHS[mStr], day, hours, minutes, seconds);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
+async function handleWatchTimeUpdatesInternal(userId, updates, res) {
+  const watchlist = await getOrCreateWatchlist(userId);
+
+  // Map of all anime currently in user's watchlist categories:
+  const watchedMap = new Map();
+  const watchedStrippedMap = new Map();
+  for (const cat of watchlist.categories || []) {
+    for (const a of cat.animes || []) {
+      if (a) {
+        const lower = a.toLowerCase().trim();
+        watchedMap.set(lower, a);
+        const stripped = lower.replace(/[^a-z0-9]/g, '');
+        if (stripped.length >= 2) {
+          watchedStrippedMap.set(stripped, a);
+        }
+      }
+    }
+  }
+
+  // Map of all anime in the entire anime list:
+  const allAnimes = scanAnimeImages();
+  const allAnimesMap = new Map();
+  const allAnimesStrippedMap = new Map();
+  for (const a of allAnimes) {
+    if (a && a.title) {
+      const lower = a.title.toLowerCase().trim();
+      allAnimesMap.set(lower, a.title);
+      const stripped = lower.replace(/[^a-z0-9]/g, '');
+      if (stripped.length >= 2) {
+        allAnimesStrippedMap.set(stripped, a.title);
+      }
+    }
+  }
+
+  const updated = [];
+  const unmatched = [];
+
+  for (const item of updates) {
+    let rawTitle = (item.rawTitle || item.title || '').trim();
+    let rawDate = item.watchedAt;
+    const delimMatch = rawTitle.match(/^(.+?)\s*<[-=]+>\s*(.+)$/);
+    if (delimMatch) {
+      rawTitle = delimMatch[1].trim();
+      if (!rawDate) rawDate = delimMatch[2].trim();
+    }
+    let cleanTitle = (item.title || rawTitle).trim();
+    const cleanMatch = cleanTitle.match(/^(.+?)\s*<[-=]+>/);
+    if (cleanMatch) {
+      cleanTitle = cleanMatch[1].trim();
+    }
+    const lower = cleanTitle.toLowerCase();
+    const stripped = lower.replace(/[^a-z0-9]/g, '');
+
+    // Find official DB title
+    let officialDbTitle = allAnimesMap.get(lower) || (stripped ? allAnimesStrippedMap.get(stripped) : null);
+
+    // 1. Verify existence in entire anime list
+    if (!officialDbTitle) {
+      unmatched.push({
+        title: rawTitle || cleanTitle,
+        reason: 'not_in_db',
+        message: 'Not found in anime database'
+      });
+      continue;
+    }
+
+    // 2. Verify presence in user's watchlist (already watched)
+    let officialWatchedTitle = watchedMap.get(lower) || 
+                               watchedMap.get(officialDbTitle.toLowerCase().trim()) || 
+                               (stripped ? watchedStrippedMap.get(stripped) : null);
+
+    if (!officialWatchedTitle) {
+      unmatched.push({
+        title: rawTitle || cleanTitle,
+        reason: 'not_in_watchlist',
+        message: 'Not in your watchlist'
+      });
+      continue;
+    }
+
+    // 3. Parse date
+    const parsedDate = parseServerCustomDate(rawDate);
+    if (!parsedDate) {
+      unmatched.push({
+        title: rawTitle || cleanTitle,
+        reason: 'invalid_date',
+        message: 'Invalid date/time format'
+      });
+      continue;
+    }
+
+    watchlist.setWatchedDate(officialWatchedTitle, parsedDate);
+    updated.push({
+      title: officialWatchedTitle,
+      watchedAt: parsedDate
+    });
+  }
+
+  if (updated.length > 0) {
+    watchlist.markModified('animeWatchedDates');
+    await watchlist.save();
+  }
+
+  return res.json({
+    success: true,
+    message: `Successfully updated watch time for ${updated.length} anime!${unmatched.length > 0 ? ` (${unmatched.length} skipped - not in watchlist or not in anime database)` : ''}`,
+    updatedCount: updated.length,
+    updated,
+    unmatched,
+    watchlist
+  });
+}
+
+// POST /api/watchlist/update-watch-times -> Update watch dates for specified animes in user's watchlist
+router.post('/update-watch-times', authenticateToken, async (req, res) => {
+  try {
+    const { updates } = req.body;
+    const userId = req.user.userId;
+
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: 'Please provide at least one anime watch time update.' });
+    }
+
+    await handleWatchTimeUpdatesInternal(userId, updates, res);
+  } catch (err) {
+    console.error('Error in /api/watchlist/update-watch-times:', err);
+    res.status(500).json({ error: 'Failed to update anime watch times.' });
+  }
+});
+
 // POST /api/watchlist/import -> Import categories and animes in the exact order specified
+// Strict Rules:
+// 1. Never import an anime already present in user's watchlist (preserve existing watchlist)
+// 2. Only insert an anime which is present in user's not completed (unwatched) list (exists in database & not yet watched)
 router.post('/import', authenticateToken, async (req, res) => {
   try {
     const { blocks } = req.body;
@@ -801,12 +1070,79 @@ router.post('/import', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Please provide at least one category block to import.' });
     }
 
+    // Automatic fallback: If any categoryName or anime title contains '<--->' or '<-->', this is a Watch Time update payload!
+    const hasWatchTimeDelimiter = blocks.some(b => 
+      (b.categoryName && /<[-=]+>/.test(b.categoryName)) ||
+      (Array.isArray(b.animes) && b.animes.some(a => a && /<[-=]+>/.test(a)))
+    );
+
+    if (hasWatchTimeDelimiter) {
+      const updates = [];
+      const delimRegex = /^(.+?)\s*<[-=]+>\s*(.+)$/;
+      for (const b of blocks) {
+        if (b.categoryName) {
+          const m = b.categoryName.match(delimRegex);
+          if (m) {
+            updates.push({
+              rawTitle: m[1].trim(),
+              title: m[1].trim(),
+              watchedAt: m[2].trim()
+            });
+          } else if (/<[-=]+>/.test(b.categoryName)) {
+            const p = b.categoryName.replace(/<[-=]+>.*/, '').trim();
+            updates.push({
+              rawTitle: p,
+              title: p,
+              watchedAt: ''
+            });
+          }
+        }
+        for (const a of (b.animes || [])) {
+          if (a) {
+            const m = a.match(delimRegex);
+            if (m) {
+              updates.push({
+                rawTitle: m[1].trim(),
+                title: m[1].trim(),
+                watchedAt: m[2].trim()
+              });
+            } else if (/<[-=]+>/.test(a)) {
+              const p = a.replace(/<[-=]+>.*/, '').trim();
+              updates.push({
+                rawTitle: p,
+                title: p,
+                watchedAt: ''
+              });
+            }
+          }
+        }
+      }
+      return await handleWatchTimeUpdatesInternal(userId, updates, res);
+    }
+
     const watchlist = await getOrCreateWatchlist(userId);
     const oldCount = countTotalWatched(watchlist);
 
+    // 1. Gather all existing watched animes in user's watchlist
+    const existingWatchedSet = new Set();
+    for (const cat of watchlist.categories || []) {
+      for (const a of cat.animes || []) {
+        if (a) existingWatchedSet.add(a.toLowerCase().trim());
+      }
+    }
+
+    // 2. Gather all valid anime in the system (database)
+    const allAnimes = scanAnimeImages();
+    const allAnimesMap = new Map();
+    for (const a of allAnimes) {
+      if (a && a.title) allAnimesMap.set(a.title.toLowerCase().trim(), a.title);
+    }
+
     // Validate and clean blocks: [ { categoryName: string, animes: string[] } ]
     const cleanedBlocks = [];
-    const allImportedTitlesSet = new Set();
+    const seenInThisImport = new Set();
+    let skippedAlreadyWatchedCount = 0;
+    let skippedNotInDbCount = 0;
 
     for (const b of blocks) {
       const catName = (b.categoryName || '').trim();
@@ -816,36 +1152,47 @@ router.post('/import', authenticateToken, async (req, res) => {
         ? b.animes.map(a => (a || '').trim()).filter(Boolean)
         : [];
 
-      // Avoid duplicates within the same category block while preserving order
-      const uniqueBlockAnimes = [];
-      const seenInBlock = new Set();
-      for (const title of animes) {
-        const lower = title.toLowerCase();
-        if (!seenInBlock.has(lower)) {
-          seenInBlock.add(lower);
-          uniqueBlockAnimes.push(title);
-          allImportedTitlesSet.add(lower);
+      const allowedBlockAnimes = [];
+
+      for (const rawTitle of animes) {
+        const lower = rawTitle.toLowerCase().trim();
+
+        // Check if already in user's watchlist -> NEVER IMPORT
+        if (existingWatchedSet.has(lower)) {
+          skippedAlreadyWatchedCount++;
+          continue;
+        }
+
+        // Check if exists in anime database -> If not in DB, DON'T IMPORT
+        if (!allAnimesMap.has(lower)) {
+          skippedNotInDbCount++;
+          continue;
+        }
+
+        // Must be in not-completed (unwatched) list and not yet seen in this import payload
+        if (!seenInThisImport.has(lower)) {
+          seenInThisImport.add(lower);
+          allowedBlockAnimes.push(allAnimesMap.get(lower));
         }
       }
 
-      cleanedBlocks.push({
-        categoryName: catName,
-        animes: uniqueBlockAnimes
-      });
+      // Include block if it has allowed anime or if user explicitly created a category name
+      if (allowedBlockAnimes.length > 0) {
+        cleanedBlocks.push({
+          categoryName: catName,
+          animes: allowedBlockAnimes
+        });
+      }
     }
 
     if (cleanedBlocks.length === 0) {
-      return res.status(400).json({ error: 'No valid categories found in import data.' });
+      return res.status(400).json({
+        error: `No valid unwatched anime found to import. (${skippedAlreadyWatchedCount} were already in your watchlist, ${skippedNotInDbCount} not found in anime database).`
+      });
     }
 
-    // Strict Rule: Remove all imported animes from existing categories first
-    // so no anime exists in more than one category in the user's watchlist
-    for (const cat of watchlist.categories) {
-      cat.animes = cat.animes.filter(a => !allImportedTitlesSet.has(a.toLowerCase().trim()));
-    }
-
-    // Update existing categories (preserve their existing order, only append unique new animes to the end)
-    // or append new categories to the end
+    // Update existing categories or append new categories to the end
+    // Existing categories preserve their order and all existing anime remain intact
     const maxExistingOrder = watchlist.categories.reduce((max, c) => Math.max(max, c.order != null ? c.order : 0), -1);
     let nextNewOrder = maxExistingOrder + 1;
 
@@ -858,7 +1205,7 @@ router.post('/import', authenticateToken, async (req, res) => {
       if (existingCat) {
         // Update casing
         existingCat.categoryName = block.categoryName;
-        // Append animes to the last in exact requested order
+        // Append newly allowed animes to the end
         for (const title of block.animes) {
           if (!existingCat.animes.some(a => a.toLowerCase().trim() === title.toLowerCase().trim())) {
             existingCat.animes.push(title);
@@ -874,7 +1221,7 @@ router.post('/import', authenticateToken, async (req, res) => {
       }
     }
 
-    // Ensure watched dates are tracked for imported animes
+    // Ensure watched dates are tracked for newly imported animes
     const importNow = new Date();
     for (const block of cleanedBlocks) {
       for (const title of (block.animes || [])) {
@@ -902,8 +1249,19 @@ router.post('/import', authenticateToken, async (req, res) => {
     let totalAnimes = 0;
     cleanedBlocks.forEach(b => totalAnimes += b.animes.length);
 
+    let message = `Successfully imported ${totalAnimes} unwatched anime into ${totalCategories} category/categories!`;
+    if (skippedAlreadyWatchedCount > 0 || skippedNotInDbCount > 0) {
+      const details = [];
+      if (skippedAlreadyWatchedCount > 0) details.push(`${skippedAlreadyWatchedCount} already in watchlist`);
+      if (skippedNotInDbCount > 0) details.push(`${skippedNotInDbCount} not in anime database`);
+      message += ` (${details.join(', ')} skipped)`;
+    }
+
     res.json({
-      message: `Successfully imported ${totalCategories} category/categories and ${totalAnimes} anime into your watchlist!`,
+      message,
+      importedCount: totalAnimes,
+      skippedAlreadyWatchedCount,
+      skippedNotInDbCount,
       watchlist
     });
   } catch (err) {

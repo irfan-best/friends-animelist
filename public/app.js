@@ -16,6 +16,9 @@ const state = {
   globalStats: {},  // Map of { [title]: count }
   globalRankStats: {}, // Map of { [title]: rankSum }
   userWatchlist: null, // Watchlist document of currentUser { userId, categories: [...] }
+  communityWatchlists: {}, // Map of { [userId]: watchlistDocument }
+  adminLoginHistory: [],
+  currentAdminTab: 'passwords',
   
   // Browse View state
   communityUsers: [],
@@ -287,16 +290,36 @@ async function showApp() {
 // ==========================================
 async function loadCoreData() {
   try {
-    const [animes, statsData, watchlistData] = await Promise.all([
+    const [animes, statsData, watchlistData, commData] = await Promise.all([
       apiRequest('/api/animes'),
       apiRequest('/api/animes/global-stats'),
-      apiRequest(`/api/watchlist/${state.currentUser._id}`)
+      apiRequest(`/api/watchlist/${state.currentUser._id}`),
+      apiRequest('/api/watchlist/all-community-data').catch(err => {
+        console.warn('Preload community data failed:', err);
+        return null;
+      })
     ]);
 
     state.allAnimeList = animes || [];
     state.globalStats = statsData.stats || {};
     state.globalRankStats = statsData.rankStats || {};
     state.userWatchlist = watchlistData.watchlist;
+
+    if (commData) {
+      state.communityUsers = commData.users || [];
+      state.communityWatchlists = commData.watchlists || {};
+      if (commData.globalStats) {
+        state.globalStats = Object.assign({}, commData.globalStats, state.globalStats);
+      }
+      if (commData.rankStats) {
+        state.globalRankStats = Object.assign({}, commData.rankStats, state.globalRankStats);
+      }
+    }
+
+    if (state.currentUser && state.userWatchlist) {
+      if (!state.communityWatchlists) state.communityWatchlists = {};
+      state.communityWatchlists[state.currentUser._id] = state.userWatchlist;
+    }
 
     updateHeaderBadges();
   } catch (err) {
@@ -306,6 +329,11 @@ async function loadCoreData() {
 }
 
 function updateHeaderBadges() {
+  if (state.currentUser && state.userWatchlist) {
+    if (!state.communityWatchlists) state.communityWatchlists = {};
+    state.communityWatchlists[state.currentUser._id] = state.userWatchlist;
+  }
+
   const watchedSet = getWatchedTitlesSet();
   const totalAll = state.allAnimeList.length;
   const totalWatched = watchedSet.size;
@@ -953,6 +981,10 @@ function renderPaginationControls(containerId, totalItems, viewName) {
           <i class="fa-solid fa-angles-right"></i>
         </button>
       </div>
+
+      <button class="pagination-btn pagination-btn-top" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="Go to Top">
+        <i class="fa-solid fa-arrow-up"></i> <span>Top</span>
+      </button>
     </div>
   `;
 }
@@ -1581,6 +1613,20 @@ function renderWatchlistView() {
           if (rankA !== rankB) return rankA - rankB;
         }
 
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'favorite') {
+      filteredWatched.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+        const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+        const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+        const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+        const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+        if (avgA !== avgB) return avgA - avgB;
+        if (popB !== popA) return popB - popA;
         return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
       });
     } else if (sortVal === 'watched-desc') {
@@ -2770,6 +2816,8 @@ async function openAdminSettingsModal() {
   if (!modal) return;
   modal.classList.remove('hidden');
 
+  switchAdminTab('passwords');
+
   if (searchInput) searchInput.value = '';
 
   if (container) {
@@ -2932,6 +2980,200 @@ async function saveUserPassword(userId, username) {
   }
 }
 window.saveUserPassword = saveUserPassword;
+
+// ==========================================
+// ADMIN LOGIN HISTORY (IRFAN YOICHI EXCLUSIVE)
+// ==========================================
+function switchAdminTab(tabName) {
+  state.currentAdminTab = tabName;
+  const btnPw = document.getElementById('admin-tab-btn-passwords');
+  const btnLogins = document.getElementById('admin-tab-btn-logins');
+  const viewPw = document.getElementById('admin-tab-content-passwords');
+  const viewLogins = document.getElementById('admin-tab-content-logins');
+
+  if (btnPw) btnPw.classList.toggle('active', tabName === 'passwords');
+  if (btnLogins) btnLogins.classList.toggle('active', tabName === 'logins');
+  if (viewPw) viewPw.classList.toggle('hidden', tabName !== 'passwords');
+  if (viewLogins) viewLogins.classList.toggle('hidden', tabName !== 'logins');
+
+  const activeBtn = tabName === 'passwords' ? btnPw : btnLogins;
+  if (activeBtn && document.activeElement && document.activeElement.closest && document.activeElement.closest('#modal-admin-settings')) {
+    if (document.activeElement.tagName === 'INPUT') {
+      activeBtn.focus();
+    }
+  }
+
+  if (tabName === 'logins') {
+    loadAdminLoginHistory();
+  }
+}
+window.switchAdminTab = switchAdminTab;
+
+function cycleAdminTabs(direction = 'next') {
+  const adminTabs = ['passwords', 'logins'];
+  const curIdx = adminTabs.indexOf(state.currentAdminTab || 'passwords');
+  let nextIdx;
+  if (curIdx === -1) {
+    nextIdx = 0;
+  } else if (direction === 'next') {
+    nextIdx = (curIdx + 1) % adminTabs.length;
+  } else {
+    nextIdx = (curIdx - 1 + adminTabs.length) % adminTabs.length;
+  }
+  switchAdminTab(adminTabs[nextIdx]);
+}
+window.cycleAdminTabs = cycleAdminTabs;
+
+async function loadAdminLoginHistory() {
+  const container = document.getElementById('admin-logins-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+      <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.75rem; margin-bottom: 0.75rem; color: var(--primary);"></i>
+      <p>Loading user login history...</p>
+    </div>
+  `;
+
+  try {
+    const res = await apiRequest('/api/admin/login-history');
+    state.adminLoginHistory = Array.isArray(res) ? res : (res?.history || []);
+    renderAdminLoginHistory();
+  } catch (err) {
+    console.error('Failed to load login history:', err);
+    container.innerHTML = `
+      <div style="text-align: center; padding: 2rem; color: var(--danger);">
+        <i class="fa-solid fa-circle-exclamation" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
+        <p>${escapeHtml(err.message || 'Failed to load login history.')}</p>
+      </div>
+    `;
+  }
+}
+window.loadAdminLoginHistory = loadAdminLoginHistory;
+
+function filterAdminLoginHistory() {
+  renderAdminLoginHistory();
+}
+window.filterAdminLoginHistory = filterAdminLoginHistory;
+
+function parseUserAgentDevice(ua) {
+  if (!ua) return 'Unknown Device';
+  let browser = 'Browser';
+  if (ua.includes('Firefox/')) browser = 'Firefox';
+  else if (ua.includes('Edg/')) browser = 'Edge';
+  else if (ua.includes('Chrome/')) browser = 'Chrome';
+  else if (ua.includes('Safari/') && !ua.includes('Chrome/')) browser = 'Safari';
+
+  let os = 'Device';
+  if (ua.includes('Windows')) os = 'Windows';
+  else if (ua.includes('Macintosh') || ua.includes('Mac OS')) os = 'Mac';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+  else if (ua.includes('Linux')) os = 'Linux';
+
+  return `${browser} on ${os}`;
+}
+
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 45) return 'Just now';
+  if (diffSec < 90) return '1 min ago';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} mins ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+  return d.toLocaleDateString();
+}
+
+function isLocalhostIp(ip) {
+  if (!ip) return true;
+  const cleaned = String(ip).trim().toLowerCase().replace(/^::ffff:/, '');
+  return cleaned === '127.0.0.1' ||
+         cleaned === '::1' ||
+         cleaned === 'localhost' ||
+         cleaned === '0.0.0.0' ||
+         cleaned.startsWith('127.');
+}
+
+function renderAdminLoginHistory() {
+  const container = document.getElementById('admin-logins-container');
+  const searchInput = document.getElementById('admin-login-search');
+  if (!container) return;
+
+  const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+  let list = (state.adminLoginHistory || []).filter(item => !isLocalhostIp(item.ip));
+
+  if (query) {
+    list = list.filter(item =>
+      (item.username || '').toLowerCase().includes(query) ||
+      (item.ip || '').toLowerCase().includes(query) ||
+      (item.userAgent || '').toLowerCase().includes(query)
+    );
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+        <i class="fa-regular fa-clock" style="font-size: 2rem; margin-bottom: 0.5rem; color: var(--text-dim);"></i>
+        <p>${query ? `No login records matching "${escapeHtml(query)}".` : 'No user login history recorded yet.'}</p>
+      </div>
+    `;
+    return;
+  }
+
+  const html = `
+    <div class="login-history-list">
+      ${list.map(item => {
+        const isMe = Boolean(state.currentUser && item.username && item.username.toLowerCase() === state.currentUser.username.toLowerCase());
+        const d = item.loginTime ? new Date(item.loginTime) : null;
+        const timeFormatted = d ? d.toLocaleString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        }) : 'Unknown Time';
+        const relativeTime = formatRelativeTime(item.loginTime);
+        const device = parseUserAgentDevice(item.userAgent);
+        const ipDisplay = item.ip ? (item.ip.startsWith('::ffff:') ? item.ip.replace('::ffff:', '') : item.ip) : 'Unknown IP';
+
+        return `
+          <div class="login-history-card">
+            <div class="login-history-user">
+              <div class="admin-user-avatar" style="width: 32px; height: 32px; font-size: 0.8rem;">
+                ${escapeHtml((item.username || '?').charAt(0).toUpperCase())}
+              </div>
+              <div>
+                <strong style="color: #fff; font-size: 0.9rem;">${escapeHtml(item.username || 'Unknown')}</strong>
+                ${isMe ? '<span class="user-dir-you" style="font-size: 0.7rem; margin-left: 0.3rem;">(You)</span>' : ''}
+              </div>
+            </div>
+
+            <div class="login-history-meta">
+              <div class="login-history-meta-item" title="${escapeAttr(item.loginTime || '')}">
+                <i class="fa-regular fa-clock" style="color: var(--primary);"></i>
+                <span>${escapeHtml(timeFormatted)} <small style="color: var(--text-dim); margin-left: 4px;">(${escapeHtml(relativeTime)})</small></span>
+              </div>
+              <div class="login-history-meta-item" title="Client IP Address">
+                <i class="fa-solid fa-network-wired" style="color: var(--secondary);"></i>
+                <code style="font-size: 0.78rem; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${escapeHtml(ipDisplay)}</code>
+              </div>
+              <div class="login-history-meta-item" title="${escapeAttr(item.userAgent || '')}">
+                <i class="fa-solid fa-display" style="color: var(--text-dim);"></i>
+                <span>${escapeHtml(device)}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+window.renderAdminLoginHistory = renderAdminLoginHistory;
 
 function openDeleteCategoryModal(categoryId, categoryName) {
   document.getElementById('delete-cat-id').value = categoryId;
@@ -3215,6 +3457,20 @@ function renderUnwatchedView() {
 
       return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
     });
+  } else if (sortType === 'favorite') {
+    unwatchedList.sort((a, b) => {
+      const keyA = a.title.toLowerCase().trim();
+      const keyB = b.title.toLowerCase().trim();
+      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+      const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+      const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+      const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+      const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+      if (avgA !== avgB) return avgA - avgB;
+      if (popB !== popA) return popB - popA;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    });
   }
 
   grid.innerHTML = '';
@@ -3339,8 +3595,10 @@ window.filterBrowseCategory = filterBrowseCategory;
 
 async function renderBrowseView() {
   try {
-    const res = await apiRequest('/api/users');
-    state.communityUsers = Array.isArray(res) ? res : (res?.users || []);
+    if (!state.communityUsers || state.communityUsers.length === 0) {
+      const res = await apiRequest('/api/users');
+      state.communityUsers = Array.isArray(res) ? res : (res?.users || []);
+    }
 
     // Populate browse-directory-grid
     const grid = document.getElementById('browse-directory-grid');
@@ -3432,9 +3690,16 @@ async function loadBrowseUserProfile(userId, targetCat = null) {
   if (emptyState) emptyState.classList.add('hidden');
 
   try {
-    const data = await apiRequest(`/api/watchlist/${userId}`);
-    const user = data.user;
-    const watchlist = data.watchlist;
+    let user = state.communityUsers?.find(u => u._id === userId);
+    let watchlist = state.communityWatchlists ? state.communityWatchlists[userId] : null;
+
+    if (!watchlist || !user) {
+      const data = await apiRequest(`/api/watchlist/${userId}`);
+      user = data.user;
+      watchlist = data.watchlist;
+      if (!state.communityWatchlists) state.communityWatchlists = {};
+      state.communityWatchlists[userId] = watchlist;
+    }
     state.browseUserWatchlist = watchlist;
 
     if (targetCat !== null) {
@@ -3659,6 +3924,20 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
           if (rankA !== rankB) return rankA - rankB;
         }
 
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'favorite') {
+      filteredWatched.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+        const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+        const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+        const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+        const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+        if (avgA !== avgB) return avgA - avgB;
+        if (popB !== popA) return popB - popA;
         return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
       });
     } else if (sortVal === 'watched-desc') {
@@ -3887,6 +4166,13 @@ async function runComparison() {
     return;
   }
 
+  const localComp = computeComparisonLocally(sourceId, destId);
+  if (localComp) {
+    state.compareResults = localComp;
+    renderCompareResults();
+    return;
+  }
+
   try {
     const data = await apiRequest(`/api/watchlist/compare?source=${sourceId}&destination=${destId}`);
     state.compareResults = data;
@@ -3894,6 +4180,76 @@ async function runComparison() {
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+function computeComparisonLocally(sourceId, destId) {
+  if (!state.communityWatchlists) return null;
+  const sourceWl = state.communityWatchlists[sourceId];
+  const destWl = state.communityWatchlists[destId];
+  if (!sourceWl || !destWl) return null;
+
+  const sourceUser = state.communityUsers?.find(u => u._id === sourceId) || { _id: sourceId, username: 'Source User' };
+  const destUser = state.communityUsers?.find(u => u._id === destId) || { _id: destId, username: 'Destination User' };
+
+  const sourceWatchedSet = new Set();
+  if (sourceWl.categories) {
+    for (const cat of sourceWl.categories) {
+      for (const a of (cat.animes || [])) {
+        if (a) sourceWatchedSet.add(a.toLowerCase().trim());
+      }
+    }
+  }
+
+  const destWatchedTitles = [];
+  const destCategoryMap = {};
+  const destRankMap = {};
+  const destCatRankMap = {};
+
+  if (destWl.categories) {
+    const sortedCats = [...destWl.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+    let overallRank = 1;
+    for (const cat of sortedCats) {
+      let catRank = 1;
+      for (const anime of (cat.animes || [])) {
+        if (anime && !destWatchedTitles.includes(anime)) {
+          destWatchedTitles.push(anime);
+          destCategoryMap[anime] = cat.categoryName;
+          destRankMap[anime] = overallRank;
+          destCatRankMap[anime] = catRank;
+          overallRank++;
+          catRank++;
+        }
+      }
+    }
+  }
+
+  const diffTitles = destWatchedTitles.filter(t => !sourceWatchedSet.has(t.toLowerCase().trim()));
+  const diffAnimes = diffTitles.map((title, idx) => {
+    const meta = findAnimeMeta(title);
+    return {
+      title,
+      destCategory: destCategoryMap[title] || 'Watched',
+      destRank: destRankMap[title] || (idx + 1),
+      destCatRank: destCatRankMap[title] || 1,
+      fileName: meta ? meta.fileName : `${title}.jpg`,
+      imageUrl: meta ? meta.imageUrl : `/images/${encodeURIComponent(title)}.jpg`
+    };
+  });
+
+  return {
+    sourceUser: {
+      _id: sourceUser._id,
+      username: sourceUser.username,
+      totalWatched: sourceWatchedSet.size
+    },
+    destinationUser: {
+      _id: destUser._id,
+      username: destUser.username,
+      totalWatched: destWatchedTitles.length
+    },
+    diffCount: diffAnimes.length,
+    diffAnimes
+  };
 }
 
 function renderCompareResults() {
@@ -3933,6 +4289,20 @@ function renderCompareResults() {
     sortedDiff.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
   } else if (sortType === 'alpha-desc') {
     sortedDiff.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+  } else if (sortType === 'favorite') {
+    sortedDiff.sort((a, b) => {
+      const keyA = a.title.toLowerCase().trim();
+      const keyB = b.title.toLowerCase().trim();
+      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+      const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+      const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+      const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+      const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+      if (avgA !== avgB) return avgA - avgB;
+      if (popB !== popA) return popB - popA;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    });
   } else if (sortType === 'popularity-desc') {
     sortedDiff.sort((a, b) => {
       const keyA = a.title.toLowerCase().trim();
@@ -4106,6 +4476,13 @@ async function fetchCommonAnime() {
     return;
   }
 
+  const localCommon = computeCommonAnimeLocally(selectedIds);
+  if (localCommon) {
+    state.commonAnimeResults = localCommon;
+    renderCommonResults();
+    return;
+  }
+
   try {
     const res = await apiRequest('/api/watchlist/common', {
       method: 'POST',
@@ -4117,6 +4494,90 @@ async function fetchCommonAnime() {
   } catch (err) {
     showToast(err.message || 'Failed to fetch common anime.', 'error');
   }
+}
+
+function computeCommonAnimeLocally(selectedIds) {
+  if (!state.communityWatchlists) return null;
+  for (const id of selectedIds) {
+    if (!state.communityWatchlists[id]) return null;
+  }
+
+  const users = selectedIds.map(id => {
+    const u = state.communityUsers?.find(user => user._id === id);
+    return u ? { _id: u._id, username: u.username } : { _id: id, username: 'Friend' };
+  });
+
+  const userStats = selectedIds.map(id => {
+    const wl = state.communityWatchlists[id];
+    const watchedSet = new Set();
+    const rankMap = new Map();
+    const catMap = new Map();
+
+    if (wl && wl.categories) {
+      const sortedCats = [...wl.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+      let overallRank = 1;
+      for (const cat of sortedCats) {
+        for (const a of (cat.animes || [])) {
+          const key = a ? a.toLowerCase().trim() : '';
+          if (key && !rankMap.has(key)) {
+            watchedSet.add(key);
+            rankMap.set(key, overallRank);
+            catMap.set(key, cat.categoryName);
+            overallRank++;
+          }
+        }
+      }
+    }
+    return { id, watchedSet, rankMap, catMap };
+  });
+
+  const firstSet = userStats[0].watchedSet;
+  const commonKeys = [];
+  for (const key of firstSet) {
+    if (userStats.every(s => s.watchedSet.has(key))) {
+      commonKeys.push(key);
+    }
+  }
+
+  const commonAnimes = commonKeys.map(key => {
+    const meta = findAnimeMeta(key);
+    const title = meta ? meta.title : key;
+    const imageUrl = meta ? meta.imageUrl : `/images/${encodeURIComponent(title)}.jpg`;
+
+    let rankSum = 0;
+    const userBreakdown = users.map((u, i) => {
+      const r = userStats[i].rankMap.get(key) || null;
+      if (r != null) rankSum += r;
+      return {
+        userId: u._id,
+        username: u.username,
+        categoryName: userStats[i].catMap.get(key) || '',
+        rank: r
+      };
+    });
+
+    const avgRank = users.length > 0 ? (rankSum / users.length) : null;
+    return {
+      title,
+      imageUrl,
+      avgRank,
+      userBreakdown
+    };
+  });
+
+  // Default sorting: Least Rank (avgRank ascending)
+  commonAnimes.sort((a, b) => {
+    const rA = a.avgRank != null ? a.avgRank : Infinity;
+    const rB = b.avgRank != null ? b.avgRank : Infinity;
+    if (rA !== rB) return rA - rB;
+    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+  });
+
+  return {
+    users,
+    totalCommon: commonAnimes.length,
+    commonAnimes
+  };
 }
 
 function renderCommonResults() {
@@ -4164,9 +4625,9 @@ function renderCommonResults() {
 
   if (sortVal === 'least-rank') {
     sorted.sort((a, b) => {
-      const minA = Math.min(...(a.userBreakdown || []).map(u => (u.rank != null ? u.rank : Infinity)));
-      const minB = Math.min(...(b.userBreakdown || []).map(u => (u.rank != null ? u.rank : Infinity)));
-      if (minA !== minB) return minA - minB;
+      const avgA = a.avgRank != null ? a.avgRank : ((a.userBreakdown || []).reduce((acc, u) => acc + (u.rank != null ? u.rank : 999999), 0) / Math.max(1, (a.userBreakdown || []).length));
+      const avgB = b.avgRank != null ? b.avgRank : ((b.userBreakdown || []).reduce((acc, u) => acc + (u.rank != null ? u.rank : 999999), 0) / Math.max(1, (b.userBreakdown || []).length));
+      if (avgA !== avgB) return avgA - avgB;
 
       const sumA = (a.userBreakdown || []).reduce((acc, u) => acc + (u.rank != null ? u.rank : 999999), 0);
       const sumB = (b.userBreakdown || []).reduce((acc, u) => acc + (u.rank != null ? u.rank : 999999), 0);
@@ -4475,72 +4936,252 @@ window.inspectUserWatchlist = inspectUserWatchlist;
 // COPY DISPLAYED ANIME LIST
 // ==========================================
 function copyAllDisplayedAnimeNames() {
-  let activeContainer = null;
+  let titles = [];
   let viewDesc = 'anime list';
 
-  if (state.currentView === 'watchlist') {
-    activeContainer = document.getElementById('categories-container');
-    const isAll = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
-    if (isAll) {
-      viewDesc = 'watchlist (All Categories)';
-    } else {
-      const activeCat = state.userWatchlist?.categories?.find(c => isCategoryActive(c));
-      viewDesc = activeCat ? `watchlist (${activeCat.categoryName})` : 'category watchlist';
-    }
-  } else if (state.currentView === 'unwatched') {
-    activeContainer = document.getElementById('unwatched-grid');
-    viewDesc = 'Not Watched list';
-  } else if (state.currentView === 'browse') {
-    activeContainer = document.getElementById('browse-categories-container');
-    const user = state.communityUsers?.find(u => u._id === state.browseSelectedUserId);
-    const isAll = !state.browseActiveCategoryFilter || state.browseActiveCategoryFilter === 'all';
-    if (user) {
-      viewDesc = `${user.username}'s ${isAll ? 'watchlist' : 'category'}`;
-    } else {
-      viewDesc = "friend's watchlist";
-    }
-  } else if (state.currentView === 'compare') {
-    activeContainer = document.getElementById('compare-results-container');
-    viewDesc = 'compared anime';
-  }
+  const isSelectionActive = (state.currentView === 'watchlist' || state.currentView === 'unwatched') &&
+                            state.isSelectionMode && state.selectedAnimes.size > 0;
 
-  if (!activeContainer) {
-    showToast('No anime list available to copy.', 'warning');
-    return;
-  }
-
-  const isSelectionActive = (state.currentView === 'watchlist' && state.isSelectionMode && state.selectedAnimes.size > 0) ||
-                            (state.currentView === 'unwatched' && state.isSelectionMode && state.selectedAnimes.size > 0);
   if (isSelectionActive) {
-    viewDesc = `selected ${state.selectedAnimes.size} anime`;
-  }
+    titles = Array.from(state.selectedAnimes);
+    viewDesc = `selected ${titles.length} anime`;
+  } else if (state.currentView === 'watchlist') {
+    const searchInput = document.getElementById('watchlist-search');
+    const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    const categories = state.userWatchlist?.categories || [];
+    const sortedCats = [...categories].sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  const cards = Array.from(activeContainer.querySelectorAll('.anime-card'));
-  const titles = [];
+    if (query && state.watchlistSearchScope === 'global') {
+      titles = (state.allAnimeList || [])
+        .filter(a => a.title.toLowerCase().includes(query))
+        .map(a => a.title);
+      viewDesc = `global search "${query}"`;
+    } else {
+      const isAll = !state.activeCategoryFilter || state.activeCategoryFilter === 'all';
+      if (isAll) {
+        viewDesc = 'watchlist (All Categories)';
+        const watchedDates = state.userWatchlist?.animeWatchedDates || {};
+        let allWatched = [];
+        sortedCats.forEach(cat => {
+          (cat.animes || []).forEach(animeTitle => {
+            if (!query || animeTitle.toLowerCase().includes(query)) {
+              const wKey = animeTitle.toLowerCase().trim();
+              const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
+              allWatched.push({ title: animeTitle, watchedAt });
+            }
+          });
+        });
 
-  cards.forEach(card => {
-    if (card.offsetParent !== null || window.getComputedStyle(card).display !== 'none') {
-      const title = card.getAttribute('data-anime-title') ||
-                    card.querySelector('.anime-title')?.textContent?.trim();
-      if (title) {
-        if (isSelectionActive) {
-          if (state.selectedAnimes.has(title) || card.classList.contains('selected')) {
-            titles.push(title);
-          }
-        } else {
-          titles.push(title);
+        // Apply date filter
+        const filter = state.dateFilter.watchlist;
+        if (filter && filter.year !== 'all') {
+          allWatched = allWatched.filter(item => {
+            if (!item.watchedAt) return false;
+            const d = new Date(item.watchedAt);
+            if (isNaN(d.getTime())) return false;
+            if (d.getFullYear().toString() !== filter.year.toString()) return false;
+            if (filter.period && filter.period !== 'all') {
+              const month = d.getMonth() + 1;
+              if (filter.period.startsWith('season:')) {
+                const season = filter.period.replace('season:', '').toLowerCase();
+                if (season === 'winter' && (month < 1 || month > 3)) return false;
+                if (season === 'spring' && (month < 4 || month > 6)) return false;
+                if (season === 'summer' && (month < 7 || month > 9)) return false;
+                if (season === 'fall' && (month < 10 || month > 12)) return false;
+              } else if (filter.period.startsWith('month:')) {
+                const targetMonth = parseInt(filter.period.replace('month:', ''), 10);
+                if (month !== targetMonth) return false;
+              }
+            }
+            return true;
+          });
+        }
+
+        // Apply sort
+        const sortVal = state.watchlistAllSort || 'default';
+        if (sortVal === 'alpha-asc') {
+          allWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+        } else if (sortVal === 'alpha-desc') {
+          allWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+        } else if (sortVal === 'popularity-desc') {
+          allWatched.sort((a, b) => {
+            const keyA = a.title.toLowerCase().trim();
+            const keyB = b.title.toLowerCase().trim();
+            const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+            const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+            if (popB !== popA) return popB - popA;
+            return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+          });
+        } else if (sortVal === 'favorite') {
+          allWatched.sort((a, b) => {
+            const keyA = a.title.toLowerCase().trim();
+            const keyB = b.title.toLowerCase().trim();
+            const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+            const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+            const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+            const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+            const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+            const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+            if (avgA !== avgB) return avgA - avgB;
+            if (popB !== popA) return popB - popA;
+            return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+          });
+        } else if (sortVal === 'watched-desc') {
+          allWatched.sort((a, b) => {
+            const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+            const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+            if (tB !== tA) return tB - tA;
+            return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+          });
+        } else if (sortVal === 'watched-asc') {
+          allWatched.sort((a, b) => {
+            const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+            const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+            if (tA !== tB) return tA - tB;
+            return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+          });
+        }
+        titles = allWatched.map(i => i.title);
+      } else {
+        const activeCat = sortedCats.find(c => isCategoryActive(c));
+        viewDesc = activeCat ? `watchlist (${activeCat.categoryName})` : 'category watchlist';
+        if (activeCat && activeCat.animes) {
+          titles = activeCat.animes.filter(t => !query || t.toLowerCase().includes(query));
         }
       }
     }
-  });
+  } else if (state.currentView === 'unwatched') {
+    viewDesc = 'Not Watched list';
+    const searchInput = document.getElementById('unwatched-search');
+    const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    const watchedSet = getWatchedTitlesSet();
+    let unwatchedList = [];
+    if (state.unwatchedSearchScope === 'global') {
+      unwatchedList = [...state.allAnimeList];
+    } else {
+      unwatchedList = state.allAnimeList.filter(anime => !watchedSet.has(anime.title.toLowerCase().trim()));
+    }
+    if (query) {
+      unwatchedList = unwatchedList.filter(anime => anime.title.toLowerCase().includes(query));
+    }
+    const sortSelect = document.getElementById('unwatched-sort');
+    const sortType = sortSelect ? sortSelect.value : 'popularity-desc';
+    if (sortType === 'alpha-asc') {
+      unwatchedList.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+    } else if (sortType === 'alpha-desc') {
+      unwatchedList.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+    } else if (sortType === 'favorite') {
+      unwatchedList.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+        const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+        const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+        const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+        const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+        if (avgA !== avgB) return avgA - avgB;
+        if (popB !== popA) return popB - popA;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortType === 'popularity-desc') {
+      unwatchedList.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+        if (popB !== popA) return popB - popA;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    }
+    titles = unwatchedList.map(a => a.title);
+  } else if (state.currentView === 'browse') {
+    const user = state.communityUsers?.find(u => u._id === state.browseSelectedUserId);
+    const isAll = !state.browseActiveCategoryFilter || state.browseActiveCategoryFilter === 'all';
+    viewDesc = user ? `${user.username}'s ${isAll ? 'watchlist' : 'category'}` : "friend's watchlist";
+    const categories = state.browseUserWatchlist?.categories || [];
+    const sortedCats = [...categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    if (isAll) {
+      const watchedDates = state.browseUserWatchlist?.animeWatchedDates || {};
+      let allWatched = [];
+      sortedCats.forEach(cat => {
+        (cat.animes || []).forEach(animeTitle => {
+          const wKey = animeTitle.toLowerCase().trim();
+          const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
+          allWatched.push({ title: animeTitle, watchedAt });
+        });
+      });
+      const filter = state.dateFilter.browse;
+      if (filter && filter.year !== 'all') {
+        allWatched = allWatched.filter(item => {
+          if (!item.watchedAt) return false;
+          const d = new Date(item.watchedAt);
+          if (isNaN(d.getTime())) return false;
+          if (d.getFullYear().toString() !== filter.year.toString()) return false;
+          return true;
+        });
+      }
+      const sortVal = state.browseAllSort || 'default';
+      if (sortVal === 'alpha-asc') {
+        allWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+      } else if (sortVal === 'alpha-desc') {
+        allWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+      } else if (sortVal === 'popularity-desc') {
+        allWatched.sort((a, b) => {
+          const popA = state.globalStats[a.title] ?? 0;
+          const popB = state.globalStats[b.title] ?? 0;
+          return popB - popA;
+        });
+      } else if (sortVal === 'favorite') {
+        allWatched.sort((a, b) => {
+          const popA = state.globalStats[a.title] ?? 0;
+          const popB = state.globalStats[b.title] ?? 0;
+          const rankSumA = state.globalRankStats[a.title] ?? 0;
+          const rankSumB = state.globalRankStats[b.title] ?? 0;
+          const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+          const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+          return avgA - avgB;
+        });
+      }
+      titles = allWatched.map(i => i.title);
+    } else {
+      const activeCat = sortedCats.find(c =>
+        c._id === state.browseActiveCategoryFilter ||
+        (c.categoryName && c.categoryName.toLowerCase() === state.browseActiveCategoryFilter.toLowerCase())
+      );
+      if (activeCat && activeCat.animes) {
+        titles = [...activeCat.animes];
+      }
+    }
+  } else if (state.currentView === 'compare') {
+    if (state.compareMode === 'common' && state.commonAnimeResults?.commonAnimes) {
+      titles = state.commonAnimeResults.commonAnimes.map(a => a.title);
+      viewDesc = 'common anime';
+    } else if (state.compareResults?.diffAnimes) {
+      titles = state.compareResults.diffAnimes.map(a => a.title);
+      viewDesc = 'compared diff anime';
+    }
+  }
+
+  // Fallback: if titles is empty, check visible DOM cards
+  if (titles.length === 0) {
+    const activeContainer = document.querySelector('.anime-grid:not(.hidden)');
+    if (activeContainer) {
+      const cards = Array.from(activeContainer.querySelectorAll('.anime-card'));
+      cards.forEach(card => {
+        const title = card.getAttribute('data-anime-title') || card.querySelector('.anime-title')?.textContent?.trim();
+        if (title) titles.push(title);
+      });
+    }
+  }
 
   if (titles.length === 0) {
-    showToast('No anime titles currently displayed to copy.', 'warning');
+    showToast('No anime titles found to copy.', 'warning');
     return;
   }
 
   const textToCopy = titles.join('\n');
-
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(textToCopy).then(() => {
       showToast(`Copied ${titles.length} anime title${titles.length === 1 ? '' : 's'} (${viewDesc}) to clipboard!`, 'success', 2800);
@@ -5074,10 +5715,150 @@ function openImportModal() {
   }
 }
 
-function loadImportExample() {
+function isWatchTimeFormat(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /<[-=]+>/.test(text) || text.includes('<--->') || text.includes('<-->');
+}
+
+function parseCustomDateTime(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const clean = dateStr.trim();
+  if (!clean) return null;
+
+  const MONTHS = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, sept: 8, september: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11
+  };
+
+  // Match e.g. "03 May 2020, 13:13:09" or "03 September 2020 13:13:09" or "3 May 2020"
+  const m = clean.match(/^(\d{1,2})[\s\-]+([a-zA-Z]+)[\s\-]+(\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+  if (m) {
+    const day = parseInt(m[1], 10);
+    const mStr = m[2].toLowerCase();
+    const year = parseInt(m[3], 10);
+    const hours = m[4] != null ? parseInt(m[4], 10) : 12;
+    const minutes = m[5] != null ? parseInt(m[5], 10) : 0;
+    const seconds = m[6] != null ? parseInt(m[6], 10) : 0;
+
+    if (MONTHS[mStr] !== undefined) {
+      const d = new Date(year, MONTHS[mStr], day, hours, minutes, seconds);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  // Fallback to native Date parser
+  const nativeParsed = new Date(clean);
+  if (!isNaN(nativeParsed.getTime())) {
+    return nativeParsed;
+  }
+
+  return null;
+}
+
+function isAnimeInUserWatchlist(title) {
+  if (!state.userWatchlist || !Array.isArray(state.userWatchlist.categories)) return false;
+  const lower = (title || '').toLowerCase().trim();
+  if (!lower) return false;
+  return state.userWatchlist.categories.some(cat =>
+    Array.isArray(cat.animes) && cat.animes.some(a => a && a.toLowerCase().trim() === lower)
+  );
+}
+
+function isAnimeInAllAnimeList(title) {
+  if (!Array.isArray(state.allAnimeList)) return false;
+  const lower = (title || '').toLowerCase().trim();
+  if (!lower) return false;
+  return state.allAnimeList.some(a => a && a.title && a.title.toLowerCase().trim() === lower);
+}
+
+function parseWatchTimeText(text) {
+  if (!text || !text.trim()) return [];
+
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const items = [];
+  const delimRegex = /^(.+?)\s*<[-=]+>\s*(.*)$/;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const delimMatch = line.match(delimRegex);
+    let rawTitle = '';
+    let rawDate = '';
+
+    if (delimMatch) {
+      rawTitle = delimMatch[1].trim();
+      rawDate = delimMatch[2] ? delimMatch[2].trim() : '';
+    } else {
+      rawTitle = line;
+      rawDate = '';
+    }
+
+    const resolved = resolveAnimeTitle(rawTitle);
+    const officialTitle = resolved?.title || rawTitle;
+    const parsedDate = parseCustomDateTime(rawDate);
+
+    const inDb = isAnimeInAllAnimeList(officialTitle);
+    const inWatchlist = isAnimeInUserWatchlist(officialTitle);
+    const existingDate = state.userWatchlist?.animeWatchedDates?.[officialTitle.toLowerCase().trim()] || null;
+
+    let status = 'valid';
+    let statusText = existingDate ? 'Updating Existing Date' : 'In Watchlist · Ready to Update';
+    let isError = false;
+
+    if (!inDb) {
+      status = 'not_in_db';
+      statusText = 'Not found in anime database';
+      isError = true;
+    } else if (!inWatchlist) {
+      status = 'not_in_watchlist';
+      statusText = 'Not in your watchlist';
+      isError = true;
+    } else if (!rawDate || !parsedDate) {
+      status = 'invalid_date';
+      statusText = !rawDate ? 'Missing date (<--->)' : 'Invalid date format';
+      isError = true;
+    }
+
+    items.push({
+      rawTitle,
+      rawDate,
+      officialTitle,
+      parsedDate,
+      existingDate,
+      inDb,
+      inWatchlist,
+      status,
+      statusText,
+      isError,
+      resolved
+    });
+  }
+
+  return items;
+}
+
+function loadImportExample(type = 'category') {
   const input = document.getElementById('import-text-input');
   if (!input) return;
-  input.value = `Hype
+
+  if (type === 'watchtime') {
+    input.value = `Zatch Bell<--->03 May 2020, 13:13:09
+Beyblade Metal<--->03 September 2020, 13:13:09
+Idaten Jump<--->03 October 2020, 13:13:09`;
+    showToast('Loaded Watch Time sample format!', 'info', 2500);
+  } else {
+    input.value = `Hype
 Black Clover
 One Piece
 Buchigiri
@@ -5085,8 +5866,10 @@ Buchigiri
 Romcom
 100 GFs
 Tensura`;
+    showToast('Loaded Category sample format!', 'info', 2500);
+  }
+
   handleImportTextChange();
-  showToast('Loaded sample import format!', 'info', 2000);
 }
 
 function handleImportTextChange() {
@@ -5094,53 +5877,289 @@ function handleImportTextChange() {
   const previewSection = document.getElementById('import-preview-section');
   const previewStats = document.getElementById('import-preview-stats');
   const previewBlocks = document.getElementById('import-preview-blocks');
+  const previewHeaderTitle = document.getElementById('import-preview-header-title');
+  const scrollHint = document.getElementById('import-scroll-hint');
   const submitBtn = document.getElementById('btn-submit-import');
+  const alertBox = document.getElementById('import-result-alert');
 
+  if (alertBox) alertBox.classList.add('hidden');
   if (!input || !previewSection || !previewBlocks) return;
 
   const rawText = input.value;
-  const blocks = parseImportText(rawText);
+  const isWatchTime = isWatchTimeFormat(rawText);
 
-  let totalAnime = 0;
-  blocks.forEach(b => totalAnime += b.animes.length);
+  if (isWatchTime) {
+    // ----------------------------------------
+    // MODE 1: Watch Time Updates (<--> format)
+    // ----------------------------------------
+    const items = parseWatchTimeText(rawText);
 
-  if (blocks.length === 0 || totalAnime === 0) {
-    previewSection.classList.add('hidden');
-    if (submitBtn) submitBtn.disabled = true;
+    if (items.length === 0) {
+      previewSection.classList.add('hidden');
+      if (submitBtn) submitBtn.disabled = true;
+      return;
+    }
+
+    previewSection.classList.remove('hidden');
+    if (scrollHint) scrollHint.classList.add('hidden');
+    if (previewHeaderTitle) {
+      previewHeaderTitle.innerHTML = '<i class="fa-solid fa-clock-rotate-left text-highlight"></i> Watch Time Update Preview';
+    }
+
+    const validItems = items.filter(i => !i.isError);
+    const errorItems = items.filter(i => i.isError);
+
+    if (previewStats) {
+      previewStats.innerHTML = `
+        <span style="color: #34d399; font-weight:700;"><i class="fa-solid fa-check"></i> ${validItems.length} valid</span> · 
+        <span style="color: #ef4444; font-weight:700;"><i class="fa-solid fa-triangle-exclamation"></i> ${errorItems.length} in red</span>
+      `;
+    }
+
+    previewBlocks.innerHTML = `
+      <div class="preview-watchtime-list">
+        ${items.map((item, idx) => `
+          <div class="preview-watchtime-card ${item.isError ? 'error' : 'valid'}">
+            <div style="min-width: 0;">
+              <div class="preview-watchtime-title">
+                <span class="preview-order-num">#${idx + 1}</span>
+                ${item.isError ? '<i class="fa-solid fa-circle-exclamation" style="color: #ef4444;"></i>' : '<i class="fa-solid fa-circle-check" style="color: #10b981;"></i>'}
+                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(item.officialTitle)}</span>
+                ${item.resolved?.resolvedFrom ? `<small style="opacity:0.7; font-size:0.68rem;">(${escapeHtml(item.resolved.resolvedFrom)})</small>` : ''}
+              </div>
+              <div class="preview-watchtime-date">
+                <i class="fa-regular fa-clock"></i>
+                <span>${escapeHtml(item.rawDate || 'No date specified')}</span>
+                ${item.parsedDate ? `<small style="opacity:0.65;">(${item.parsedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })})</small>` : ''}
+                ${item.existingDate ? `<span style="margin-left: 0.45rem; font-size: 0.69rem; color: #fcd34d; display: inline-flex; align-items: center; gap: 0.25rem;"><i class="fa-solid fa-arrows-rotate"></i> Overwrites previous date</span>` : ''}
+              </div>
+            </div>
+            <div class="preview-watchtime-badge ${item.isError ? 'badge-error' : 'badge-valid'}">
+              ${item.isError ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-check"></i>'}
+              <span>${escapeHtml(item.statusText)}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    if (submitBtn) {
+      submitBtn.onclick = handleImportSubmit;
+      if (validItems.length > 0) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Update Watch Times (${validItems.length} anime)`;
+      } else {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<i class="fa-solid fa-circle-xmark"></i> No Watchlist Anime to Update`;
+      }
+    }
+  } else {
+    // ----------------------------------------
+    // MODE 2: Category Import
+    // Strict rules: never duplicate already watched anime, only import unwatched anime from DB
+    // ----------------------------------------
+    const blocks = parseImportText(rawText);
+
+    let totalAnime = 0;
+    blocks.forEach(b => totalAnime += b.animes.length);
+
+    if (blocks.length === 0 || totalAnime === 0) {
+      previewSection.classList.add('hidden');
+      if (submitBtn) submitBtn.disabled = true;
+      return;
+    }
+
+    previewSection.classList.remove('hidden');
+    if (scrollHint) scrollHint.classList.remove('hidden');
+    if (previewHeaderTitle) {
+      previewHeaderTitle.innerHTML = '<i class="fa-solid fa-folder text-highlight"></i> Category Import Preview';
+    }
+
+    let willImportTotal = 0;
+    let alreadyWatchedTotal = 0;
+    let notInDbTotal = 0;
+
+    previewBlocks.innerHTML = blocks.map((block, bIdx) => {
+      const resolvedList = block.animes.map(raw => {
+        const resolved = resolveAnimeTitle(raw);
+        const official = resolved.title || raw;
+        const inDb = isAnimeInAllAnimeList(official);
+        const alreadyWatched = isAnimeInUserWatchlist(official);
+
+        let status = 'will_import';
+        let statusClass = 'matched';
+        let tooltip = 'Unwatched · Will be imported into category';
+
+        if (alreadyWatched) {
+          status = 'already_watched';
+          statusClass = 'already-in-watchlist';
+          tooltip = 'Already in your watchlist · Will NOT be re-imported';
+          alreadyWatchedTotal++;
+        } else if (!inDb) {
+          status = 'not_in_db';
+          statusClass = 'not-found error-red';
+          tooltip = 'Not in anime database · Will NOT be imported';
+          notInDbTotal++;
+        } else {
+          willImportTotal++;
+        }
+
+        return {
+          ...resolved,
+          status,
+          statusClass,
+          tooltip
+        };
+      });
+
+      return `
+        <div class="preview-cat-card">
+          <div class="preview-cat-header">
+            <span class="preview-cat-name">
+              <i class="fa-solid fa-folder"></i>
+              <span>#${bIdx + 1} <strong>${escapeHtml(block.categoryName)}</strong></span>
+            </span>
+            <span class="preview-cat-count">${resolvedList.length} anime</span>
+          </div>
+          <div class="preview-anime-tags">
+            ${resolvedList.map((item, aIdx) => `
+              <span class="preview-anime-tag ${item.statusClass}" title="${escapeAttr(item.tooltip)}">
+                <span class="preview-order-num">#${aIdx + 1}</span>
+                ${item.status === 'will_import' ? '<i class="fa-solid fa-circle-check text-success"></i>' : (item.status === 'already_watched' ? '<i class="fa-solid fa-clock-rotate-left" style="color:#fcd34d;"></i>' : '<i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i>')}
+                <span>${escapeHtml(item.title)}</span>
+                ${item.status === 'already_watched' ? '<small style="opacity:0.8; font-size:0.65rem; color:#fcd34d;">(Already Watched)</small>' : ''}
+                ${item.status === 'not_in_db' ? '<small style="opacity:0.8; font-size:0.65rem; color:#ef4444;">(Not in DB)</small>' : ''}
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (previewStats) {
+      previewStats.innerHTML = `
+        <span style="color:#34d399; font-weight:700;">${willImportTotal} unwatched to import</span>${alreadyWatchedTotal > 0 ? ` · <span style="color:#fcd34d;">${alreadyWatchedTotal} already watched</span>` : ''}${notInDbTotal > 0 ? ` · <span style="color:#ef4444;">${notInDbTotal} not in DB</span>` : ''}
+      `;
+    }
+
+    if (submitBtn) {
+      submitBtn.onclick = handleImportSubmit;
+      if (willImportTotal > 0) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Import ${willImportTotal} New Anime`;
+      } else {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<i class="fa-solid fa-ban"></i> No New Unwatched Anime to Import`;
+      }
+    }
+  }
+}
+
+async function submitWatchTimeUpdate() {
+  const input = document.getElementById('import-text-input');
+  const submitBtn = document.getElementById('btn-submit-import');
+  const alertBox = document.getElementById('import-result-alert');
+  if (!input) return;
+
+  const rawText = input.value;
+  const items = parseWatchTimeText(rawText);
+  const validItems = items.filter(i => !i.isError);
+  const previewErrorItems = items.filter(i => i.isError);
+
+  if (validItems.length === 0) {
+    showToast('No valid watchlist anime found to update.', 'warning');
     return;
   }
 
-  previewSection.classList.remove('hidden');
-  if (submitBtn) submitBtn.disabled = false;
+  const payload = {
+    updates: validItems.map(i => ({
+      title: i.officialTitle,
+      rawTitle: i.rawTitle,
+      watchedAt: i.parsedDate.toISOString()
+    }))
+  };
 
-  if (previewStats) {
-    previewStats.textContent = `${blocks.length} categories, ${totalAnime} anime in order`;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Updating Watch Times...`;
   }
 
-  previewBlocks.innerHTML = blocks.map((block, bIdx) => {
-    const resolvedList = block.animes.map(raw => resolveAnimeTitle(raw));
-    return `
-      <div class="preview-cat-card">
-        <div class="preview-cat-header">
-          <span class="preview-cat-name">
-            <i class="fa-solid fa-folder"></i>
-            <span>#${bIdx + 1} <strong>${escapeHtml(block.categoryName)}</strong></span>
-          </span>
-          <span class="preview-cat-count">${resolvedList.length} anime</span>
-        </div>
-        <div class="preview-anime-tags">
-          ${resolvedList.map((item, aIdx) => `
-            <span class="preview-anime-tag ${item.matched ? 'matched' : ''}" title="${item.resolvedFrom ? `Resolved from "${escapeAttr(item.resolvedFrom)}"` : 'Exact match'}">
-              <span class="preview-order-num">#${aIdx + 1}</span>
-              ${item.matched ? '<i class="fa-solid fa-circle-check text-success"></i>' : '<i class="fa-regular fa-circle"></i>'}
-              <span>${escapeHtml(item.title)}</span>
-              ${item.resolvedFrom ? `<small style="opacity:0.75; font-size:0.65rem;">(${escapeHtml(item.resolvedFrom)})</small>` : ''}
-            </span>
-          `).join('')}
-        </div>
-      </div>
-    `;
-  }).join('');
+  try {
+    const res = await apiRequest('/api/watchlist/update-watch-times', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    state.userWatchlist = res.watchlist;
+
+    await refreshGlobalStats();
+    updateHeaderBadges();
+
+    // Re-render current view if on watchlist
+    if (state.currentView === 'watchlist') {
+      renderWatchlistView();
+      renderWatchlistSubHeader();
+    }
+
+    // Identify all red/unmatched anime (from preview errors and backend errors)
+    const backendUnmatched = res.unmatched || [];
+    const allRedNamesMap = new Map();
+
+    previewErrorItems.forEach(item => {
+      allRedNamesMap.set(item.rawTitle.toLowerCase().trim(), {
+        title: item.rawTitle,
+        reason: item.statusText
+      });
+    });
+
+    backendUnmatched.forEach(item => {
+      const lower = (item.title || '').toLowerCase().trim();
+      if (!allRedNamesMap.has(lower)) {
+        allRedNamesMap.set(lower, {
+          title: item.title,
+          reason: item.message || item.reason
+        });
+      }
+    });
+
+    const allRedList = Array.from(allRedNamesMap.values());
+
+    if (allRedList.length > 0) {
+      if (alertBox) {
+        alertBox.classList.remove('hidden');
+        alertBox.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-sm); padding: 0.85rem 1rem; color: #fff;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: #f87171; font-weight: 700; font-size: 0.88rem; margin-bottom: 0.45rem;">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>Updated watch time for ${res.updatedCount} anime! The following ${allRedList.length} anime could not be updated:</span>
+            </div>
+            <ul style="margin: 0; padding-left: 1.25rem; font-size: 0.82rem; line-height: 1.5;">
+              ${allRedList.map(item => `
+                <li style="color: #ef4444; font-weight: 700;">
+                  <span>${escapeHtml(item.title)}</span>
+                  <span style="color: var(--text-dim); font-weight: 400; font-size: 0.74rem;"> — ${escapeHtml(item.reason)}</span>
+                </li>
+              `).join('')}
+            </ul>
+          </div>
+        `;
+      }
+      showToast(`Updated ${res.updatedCount} anime! ${allRedList.length} anime shown in red were not updated.`, 'warning', 6000);
+    } else {
+      closeModal('modal-import');
+      input.value = '';
+      handleImportTextChange();
+      showToast(res.message || 'Successfully updated watch times!', 'success', 4000);
+    }
+  } catch (err) {
+    console.error('Failed to update watch times:', err);
+    showToast(err.message || 'Failed to update watch times. Please check the format.', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Update Watch Times`;
+    }
+  }
 }
 
 async function submitWatchlistImport() {
@@ -5148,7 +6167,11 @@ async function submitWatchlistImport() {
   const submitBtn = document.getElementById('btn-submit-import');
   if (!input) return;
 
-  const rawText = input.value;
+  const rawText = input.value || '';
+  if (isWatchTimeFormat(rawText)) {
+    return submitWatchTimeUpdate();
+  }
+
   const parsedBlocks = parseImportText(rawText);
 
   if (parsedBlocks.length === 0) {
@@ -5198,11 +6221,23 @@ async function submitWatchlistImport() {
   }
 }
 
+function handleImportSubmit() {
+  const input = document.getElementById('import-text-input');
+  if (!input) return;
+  const rawText = input.value || '';
+  if (isWatchTimeFormat(rawText)) {
+    return submitWatchTimeUpdate();
+  }
+  return submitWatchlistImport();
+}
+
 // Window globals for inline calls
 window.openImportModal = openImportModal;
 window.loadImportExample = loadImportExample;
 window.handleImportTextChange = handleImportTextChange;
+window.handleImportSubmit = handleImportSubmit;
 window.submitWatchlistImport = submitWatchlistImport;
+window.submitWatchTimeUpdate = submitWatchTimeUpdate;
 
 function openHelpModal() {
   const modal = document.getElementById('modal-help');
@@ -5315,10 +6350,12 @@ function navigateBrowseCategory(direction) {
 }
 
 function cycleViews(direction) {
-  const views = ['watchlist', 'unwatched', 'browse', 'compare'];
+  const views = ['watchlist', 'unwatched', 'browse', 'compare', 'leaderboard'];
   const curIdx = views.indexOf(state.currentView || 'watchlist');
   let nextIdx;
-  if (direction === 'next') {
+  if (curIdx === -1) {
+    nextIdx = 0;
+  } else if (direction === 'next') {
     nextIdx = (curIdx + 1) % views.length;
   } else {
     nextIdx = (curIdx - 1 + views.length) % views.length;
@@ -5354,6 +6391,40 @@ function initKeyboardShortcuts() {
         return;
       }
 
+      // Modal Tab Navigation: Admin Settings & History (ArrowRight / ArrowLeft)
+      if (openModal.id === 'modal-admin-settings' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        const isInput = e.target.tagName === 'INPUT';
+        const isPw = isInput && e.target.classList.contains('admin-pw-input');
+
+        // Ctrl/Cmd + Arrow always cycles tabs
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          cycleAdminTabs(e.key === 'ArrowRight' ? 'next' : 'prev');
+          return;
+        }
+
+        // When not in an input, plain ArrowLeft/ArrowRight cycles tabs
+        if (!isInput) {
+          e.preventDefault();
+          cycleAdminTabs(e.key === 'ArrowRight' ? 'next' : 'prev');
+          return;
+        }
+
+        // Inside search inputs (user or login search): cycle if input is empty or caret is at edge boundary
+        if (!isPw) {
+          const val = e.target.value || '';
+          if (
+            val === '' ||
+            (e.key === 'ArrowRight' && e.target.selectionEnd === val.length) ||
+            (e.key === 'ArrowLeft' && e.target.selectionStart === 0)
+          ) {
+            e.preventDefault();
+            cycleAdminTabs(e.key === 'ArrowRight' ? 'next' : 'prev');
+            return;
+          }
+        }
+      }
+
       // Enter performs the main action of the open modal box
       if (e.key === 'Enter') {
         // If focused specifically on a Cancel / Close button, allow Enter to cancel/close
@@ -5369,9 +6440,9 @@ function initKeyboardShortcuts() {
           e.preventDefault();
           const submitBtn = document.getElementById('btn-submit-import');
           if (submitBtn && !submitBtn.disabled) {
-            submitWatchlistImport();
+            handleImportSubmit();
           } else {
-            showToast('Please enter category names and anime before importing.', 'info');
+            showToast('Please enter data before importing.', 'info');
           }
           return;
         }
