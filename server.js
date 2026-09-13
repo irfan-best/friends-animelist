@@ -11,7 +11,7 @@ const watchlistRoutes = require('./routes/watchlist');
 const notificationRoutes = require('./routes/notifications');
 
 const app = express();
-const PORT = process.env.PORT || 3009;
+const PORT = 3009;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://lovereonagi143_db_user:1PzyI4tM19xcIPp5@cluster0.zi3bp48.mongodb.net/myNotesApp?retryWrites=true&w=majority&appName=Cluster0';
 
 // Ensure Images directory exists
