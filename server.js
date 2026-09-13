@@ -57,8 +57,11 @@ app.get('*', (req, res) => {
 // MongoDB Connection & Server Start
 if (require.main === module) {
   mongoose.connect(MONGODB_URI)
-    .then(() => {
+    .then(async () => {
       console.log('✅ Connected to MongoDB successfully.');
+      if (typeof watchlistRoutes.ensureAllDefaultWatchedDates === 'function') {
+        await watchlistRoutes.ensureAllDefaultWatchedDates();
+      }
       app.listen(PORT, () => {
         console.log(`🚀 Server is running on http://localhost:${PORT}`);
       });

@@ -7,6 +7,66 @@ const Notification = require('../models/Notification');
 const { authenticateToken } = require('../middleware/auth');
 const { scanAnimeImages } = require('../utils/imageScanner');
 
+const DEFAULT_WATCHED_DATE = new Date('2026-09-09T12:00:00.000Z');
+
+/**
+ * Ensures all animes in all users' watchlists have a watched date,
+ * defaulting missing dates or older placeholders to September 9th, 2026, 12:00:00 PM.
+ */
+async function ensureAllDefaultWatchedDates() {
+  try {
+    const watchlists = await Watchlist.find();
+    let totalUpdated = 0;
+    for (const wl of watchlists) {
+      let modified = false;
+      if (!Array.isArray(wl.animeWatchedDates)) {
+        wl.animeWatchedDates = [];
+        modified = true;
+      }
+
+      const existingDatesMap = new Map();
+      for (const item of wl.animeWatchedDates) {
+        if (item && item.animeTitle) {
+          existingDatesMap.set(item.animeTitle.toLowerCase().trim(), item);
+        }
+      }
+
+      for (const cat of (wl.categories || [])) {
+        for (const a of (cat.animes || [])) {
+          if (a && a.trim()) {
+            const lower = a.toLowerCase().trim();
+            const existing = existingDatesMap.get(lower);
+            if (!existing) {
+              wl.animeWatchedDates.push({
+                animeTitle: a.trim(),
+                watchedAt: DEFAULT_WATCHED_DATE
+              });
+              existingDatesMap.set(lower, { animeTitle: a.trim(), watchedAt: DEFAULT_WATCHED_DATE });
+              modified = true;
+            } else if (existing.watchedAt && (
+              new Date(existing.watchedAt).toISOString() === '2026-09-05T12:00:00.000Z'
+            )) {
+              existing.watchedAt = DEFAULT_WATCHED_DATE;
+              modified = true;
+            }
+          }
+        }
+      }
+
+      if (modified) {
+        wl.markModified('animeWatchedDates');
+        await wl.save();
+        totalUpdated++;
+      }
+    }
+    if (totalUpdated > 0) {
+      console.log(`[WATCHLIST] Initialized default watched dates for ${totalUpdated} user(s).`);
+    }
+  } catch (err) {
+    console.error('Error in ensureAllDefaultWatchedDates:', err);
+  }
+}
+
 /**
  * Helper to ensure a user has a watchlist document
  */
@@ -15,7 +75,8 @@ async function getOrCreateWatchlist(userId) {
   if (!watchlist) {
     watchlist = new Watchlist({
       userId,
-      categories: []
+      categories: [],
+      animeWatchedDates: []
     });
     await watchlist.save();
   }
@@ -314,6 +375,12 @@ router.get('/all-community-data', async (req, res) => {
     const catMap = new Map();
     const watchlistsMap = {};
 
+    const userUsernameMap = new Map();
+    for (const u of users) {
+      if (u && u._id) userUsernameMap.set(u._id.toString(), u.username);
+    }
+
+    const watchersMap = {};
     const statsMap = {};
     const rankMap = {};
     const avgRankMap = {};
@@ -322,11 +389,23 @@ router.get('/all-community-data', async (req, res) => {
     for (const wl of watchlists) {
       if (!wl.userId) continue;
       const uid = wl.userId.toString();
+      const username = userUsernameMap.get(uid) || 'User';
 
       // Sort categories according to their defined order
       if (Array.isArray(wl.categories)) {
         wl.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
       }
+
+      // Convert animeWatchedDates array to map { [lower]: date } so community watchlists deliver complete date maps
+      const datesMap = {};
+      if (Array.isArray(wl.animeWatchedDates)) {
+        for (const item of wl.animeWatchedDates) {
+          if (item && item.animeTitle) {
+            datesMap[item.animeTitle.toLowerCase().trim()] = item.watchedAt;
+          }
+        }
+      }
+      wl.animeWatchedDates = datesMap;
       watchlistsMap[uid] = wl;
 
       const seen = new Set();
@@ -353,6 +432,16 @@ router.get('/all-community-data', async (req, res) => {
                 }
                 statsDetails[key].count += 1;
                 statsDetails[key].rankSum += currentRank;
+
+                if (!watchersMap[key]) {
+                  watchersMap[key] = [];
+                }
+                watchersMap[key].push({
+                  userId: uid,
+                  username,
+                  rank: currentRank,
+                  totalWatched: 0
+                });
               }
             }
           }
@@ -372,6 +461,23 @@ router.get('/all-community-data', async (req, res) => {
       avgRankMap[key] = avg;
     }
 
+    // Populate totalWatched and sort watchersMap for instant zero-lag lookups
+    for (const key of Object.keys(watchersMap)) {
+      const list = watchersMap[key];
+      for (const w of list) {
+        w.totalWatched = countMap.get(w.userId) || 0;
+      }
+      list.sort((a, b) => {
+        const rankA = (a.rank != null) ? a.rank : Infinity;
+        const rankB = (b.rank != null) ? b.rank : Infinity;
+        if (rankA !== rankB) return rankA - rankB; // Ascending rank: #1 before #2
+        const countA = a.totalWatched || 0;
+        const countB = b.totalWatched || 0;
+        if (countB !== countA) return countB - countA; // Higher total watched first
+        return (a.username || '').localeCompare(b.username || '');
+      });
+    }
+
     const userList = users.map(u => ({
       _id: u._id,
       username: u.username,
@@ -385,6 +491,7 @@ router.get('/all-community-data', async (req, res) => {
     res.json({
       users: userList,
       watchlists: watchlistsMap,
+      watchersMap,
       globalStats: statsMap,
       globalRankStats: rankMap,
       globalAvgRankStats: avgRankMap
@@ -598,10 +705,8 @@ router.post('/add-anime', authenticateToken, async (req, res) => {
     // Track count before addition
     const oldCount = countTotalWatched(watchlist);
 
-    // Record watched date if not already present
-    if (typeof watchlist.hasWatchedDate === 'function' && !watchlist.hasWatchedDate(title)) {
-      watchlist.setWatchedDate(title, new Date());
-    }
+    // Record watched date when marked as watched (current timestamp)
+    watchlist.setWatchedDate(title, new Date());
 
     // Add anime to target category
     targetCategory.animes.push(title);
@@ -707,9 +812,7 @@ router.post('/batch-add', authenticateToken, async (req, res) => {
       if (!targetCategory.animes.some(a => a.toLowerCase().trim() === title.toLowerCase())) {
         targetCategory.animes.push(title);
       }
-      if (typeof watchlist.hasWatchedDate === 'function' && !watchlist.hasWatchedDate(title)) {
-        watchlist.setWatchedDate(title, batchNow);
-      }
+      watchlist.setWatchedDate(title, batchNow);
     }
 
     await watchlist.save();
@@ -1225,9 +1328,7 @@ router.post('/import', authenticateToken, async (req, res) => {
     const importNow = new Date();
     for (const block of cleanedBlocks) {
       for (const title of (block.animes || [])) {
-        if (typeof watchlist.hasWatchedDate === 'function' && !watchlist.hasWatchedDate(title)) {
-          watchlist.setWatchedDate(title, importNow);
-        }
+        watchlist.setWatchedDate(title, importNow);
       }
     }
 
@@ -1270,4 +1371,5 @@ router.post('/import', authenticateToken, async (req, res) => {
   }
 });
 
+router.ensureAllDefaultWatchedDates = ensureAllDefaultWatchedDates;
 module.exports = router;

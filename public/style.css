@@ -3632,29 +3632,54 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
   opacity: 0.35;
   cursor: not-allowed;
 }
-
-.pagination-btn-top {
-  min-width: auto;
-  padding: 0 0.85rem;
-  gap: 0.4rem;
+/* Floating On-Screen Scroll-To-Top Button */
+.btn-scroll-top {
+  position: fixed;
+  bottom: 2.25rem;
+  right: 2.25rem;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
   color: #fff;
-  background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.3);
-  font-size: 0.8rem;
-  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 14px rgba(99, 102, 241, 0.4);
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
-  transition: all 0.15s ease;
+  font-size: 1.15rem;
+  z-index: 999;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(14px) scale(0.9);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.pagination-btn-top:hover {
-  background: var(--primary);
-  border-color: var(--primary);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+.btn-scroll-top.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.btn-scroll-top:hover {
+  transform: translateY(-3px) scale(1.08);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55), 0 0 20px rgba(99, 102, 241, 0.6);
+  filter: brightness(1.15);
+}
+
+.btn-scroll-top:active {
+  transform: translateY(0) scale(0.95);
+}
+
+@media (max-width: 600px) {
+  .btn-scroll-top {
+    bottom: 1.5rem;
+    right: 1.25rem;
+    width: 42px;
+    height: 42px;
+    font-size: 1rem;
+  }
 }
 
 @media (max-width: 600px) {

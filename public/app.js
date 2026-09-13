@@ -73,6 +73,7 @@ const state = {
   adminUsersList: [],
   adminPasswordMasks: {}
 };
+window.state = state;
 
 // ==========================================
 // INITIALIZATION
@@ -81,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initApp();
   initKeyboardShortcuts();
   initImageRenameHandler();
+  initScrollToTopButton();
 });
 
 async function initApp() {
@@ -308,11 +310,15 @@ async function loadCoreData() {
     if (commData) {
       state.communityUsers = commData.users || [];
       state.communityWatchlists = commData.watchlists || {};
+      state.communityWatchers = commData.watchersMap || {};
       if (commData.globalStats) {
         state.globalStats = Object.assign({}, commData.globalStats, state.globalStats);
       }
-      if (commData.rankStats) {
-        state.globalRankStats = Object.assign({}, commData.rankStats, state.globalRankStats);
+      if (commData.globalRankStats || commData.rankStats) {
+        state.globalRankStats = Object.assign({}, commData.globalRankStats || commData.rankStats, state.globalRankStats);
+      }
+      if (commData.globalAvgRankStats) {
+        state.globalAvgRankStats = Object.assign({}, commData.globalAvgRankStats, state.globalAvgRankStats);
       }
     }
 
@@ -384,6 +390,28 @@ function getWatchedTitlesSet(watchlist = state.userWatchlist) {
   }
   return set;
 }
+
+function getMyWatchlistRankMap() {
+  const map = new Map();
+  if (!state.userWatchlist || !Array.isArray(state.userWatchlist.categories)) return map;
+  const sortedCats = [...state.userWatchlist.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+  let rank = 0;
+  for (const cat of sortedCats) {
+    if (Array.isArray(cat.animes)) {
+      for (const title of cat.animes) {
+        if (title && typeof title === 'string' && title.trim()) {
+          rank++;
+          const clean = title.toLowerCase().trim();
+          if (!map.has(clean)) {
+            map.set(clean, rank);
+          }
+        }
+      }
+    }
+  }
+  return map;
+}
+window.getMyWatchlistRankMap = getMyWatchlistRankMap;
 
 function findAnimeMeta(title) {
   if (!title) return null;
@@ -981,12 +1009,20 @@ function renderPaginationControls(containerId, totalItems, viewName) {
           <i class="fa-solid fa-angles-right"></i>
         </button>
       </div>
-
-      <button class="pagination-btn pagination-btn-top" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="Go to Top">
-        <i class="fa-solid fa-arrow-up"></i> <span>Top</span>
-      </button>
     </div>
   `;
+}
+
+function initScrollToTopButton() {
+  const btn = document.getElementById('btn-scroll-top');
+  if (!btn) return;
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 280) {
+      btn.classList.add('visible');
+    } else {
+      btn.classList.remove('visible');
+    }
+  }, { passive: true });
 }
 
 function handlePaginationPageChange(viewName, newPage) {
@@ -3769,7 +3805,7 @@ function renderBrowseSubHeader(user, watchlist, totalWatched) {
 
   const browseSortWrap = document.getElementById('browse-all-sort-wrap');
   if (browseSortWrap) {
-    browseSortWrap.classList.toggle('hidden', !isAllActive);
+    browseSortWrap.classList.remove('hidden');
   }
 
   // "All" chip
@@ -3835,7 +3871,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
 
   const browseSortWrap = document.getElementById('browse-all-sort-wrap');
   if (browseSortWrap) {
-    browseSortWrap.classList.toggle('hidden', !isAll);
+    browseSortWrap.classList.remove('hidden');
     const select = document.getElementById('browse-all-sort');
     if (select && select.value !== state.browseAllSort) {
       select.value = state.browseAllSort || 'default';
@@ -3864,7 +3900,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
   if (isAll) {
     const watchedDates = watchlist.animeWatchedDates || {};
     const allWatched = [];
-    sortedCats.forEach(cat => {
+    sortedCats.forEach((cat, catIdx) => {
       (cat.animes || []).forEach((animeTitle, animeIdx) => {
         const wKey = animeTitle.toLowerCase().trim();
         const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
@@ -3872,7 +3908,9 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
           title: animeTitle,
           categoryId: cat._id,
           categoryName: cat.categoryName,
+          catOrder: cat.order ?? catIdx,
           catIndex: animeIdx,
+          initialIdx: allWatched.length,
           watchedAt
         });
       });
@@ -3906,7 +3944,23 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
     }
 
     const sortVal = state.browseAllSort || 'default';
-    if (sortVal === 'alpha-asc') {
+    if (sortVal === 'my-order') {
+      const myRanks = getMyWatchlistRankMap();
+      filteredWatched.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const rankA = myRanks.has(keyA) ? myRanks.get(keyA) : Infinity;
+        const rankB = myRanks.has(keyB) ? myRanks.get(keyB) : Infinity;
+        if (rankA !== rankB) return rankA - rankB;
+        if (a.catOrder !== undefined && b.catOrder !== undefined && a.catOrder !== b.catOrder) {
+          return a.catOrder - b.catOrder;
+        }
+        if (a.catIndex !== undefined && b.catIndex !== undefined && a.catIndex !== b.catIndex) {
+          return a.catIndex - b.catIndex;
+        }
+        return a.initialIdx - b.initialIdx;
+      });
+    } else if (sortVal === 'alpha-asc') {
       filteredWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
     } else if (sortVal === 'alpha-desc') {
       filteredWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
@@ -3998,9 +4052,79 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
   const displayedCats = matchedCats.length > 0 ? matchedCats : sortedCats;
 
   displayedCats.forEach((cat) => {
-    const displayedAnimes = cat.animes || [];
+    let displayedItems = (cat.animes || []).map((animeTitle, idx) => ({
+      title: animeTitle,
+      originalIdx: idx
+    }));
 
-    const totalItems = displayedAnimes.length;
+    const sortVal = state.browseAllSort || 'default';
+    const watchedDates = watchlist.animeWatchedDates || {};
+
+    if (sortVal === 'my-order') {
+      const myRanks = getMyWatchlistRankMap();
+      displayedItems.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const rankA = myRanks.has(keyA) ? myRanks.get(keyA) : Infinity;
+        const rankB = myRanks.has(keyB) ? myRanks.get(keyB) : Infinity;
+        if (rankA !== rankB) return rankA - rankB;
+        return a.originalIdx - b.originalIdx;
+      });
+    } else if (sortVal === 'alpha-asc') {
+      displayedItems.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+    } else if (sortVal === 'alpha-desc') {
+      displayedItems.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+    } else if (sortVal === 'popularity-desc') {
+      displayedItems.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+        if (popB !== popA) return popB - popA;
+
+        if (popA > 0) {
+          const rankA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? Infinity;
+          const rankB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? Infinity;
+          if (rankA !== rankB) return rankA - rankB;
+        }
+
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'favorite') {
+      displayedItems.sort((a, b) => {
+        const keyA = a.title.toLowerCase().trim();
+        const keyB = b.title.toLowerCase().trim();
+        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+        const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+        const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+        const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+        const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+        if (avgA !== avgB) return avgA - avgB;
+        if (popB !== popA) return popB - popA;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'watched-desc') {
+      displayedItems.sort((a, b) => {
+        const wKeyA = a.title.toLowerCase().trim();
+        const wKeyB = b.title.toLowerCase().trim();
+        const tA = watchedDates[wKeyA] ? new Date(watchedDates[wKeyA]).getTime() : 0;
+        const tB = watchedDates[wKeyB] ? new Date(watchedDates[wKeyB]).getTime() : 0;
+        if (tB !== tA) return tB - tA;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    } else if (sortVal === 'watched-asc') {
+      displayedItems.sort((a, b) => {
+        const wKeyA = a.title.toLowerCase().trim();
+        const wKeyB = b.title.toLowerCase().trim();
+        const tA = watchedDates[wKeyA] ? new Date(watchedDates[wKeyA]).getTime() : 0;
+        const tB = watchedDates[wKeyB] ? new Date(watchedDates[wKeyB]).getTime() : 0;
+        if (tA !== tB) return tA - tB;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+    }
+
+    const totalItems = displayedItems.length;
     if (totalItems === 0) {
       container.innerHTML = `
         <div class="empty-category-notice glass-card" style="padding: 3rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
@@ -4018,18 +4142,17 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
     const effectivePage = Math.min(page, totalPages);
     state.pagination.browse.page = effectivePage;
 
-    const pagedAnimes = displayedAnimes.slice((effectivePage - 1) * limit, effectivePage * limit);
+    const pagedItems = displayedItems.slice((effectivePage - 1) * limit, effectivePage * limit);
 
     const grid = document.createElement('div');
     grid.className = 'anime-grid single-category-grid';
     grid.id = `browse-cat-${cat._id}`;
 
-    const watchedDates = watchlist.animeWatchedDates || {};
-    pagedAnimes.forEach((animeTitle, pageLocalIdx) => {
+    pagedItems.forEach((item, pageLocalIdx) => {
       const idx = (effectivePage - 1) * limit + pageLocalIdx;
-      const wKey = animeTitle.toLowerCase().trim();
+      const wKey = item.title.toLowerCase().trim();
       const watchedAt = watchedDates[wKey] || null;
-      const card = createBrowseAnimeCard(animeTitle, idx, null, watchedAt);
+      const card = createBrowseAnimeCard(item.title, idx, null, watchedAt, item.originalIdx);
       grid.appendChild(card);
     });
 
@@ -4040,9 +4163,26 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
   triggerGridRowAlignment();
 }
 
-function createBrowseAnimeCard(animeTitle, idx, categoryName = null, watchedAt = null) {
+function createBrowseAnimeCard(animeTitle, idx, categoryName = null, watchedAt = null, originalIdx = null) {
   const meta = findAnimeMeta(animeTitle);
   const popCount = state.globalStats[animeTitle] || 0;
+
+  let extraMetaHtml = '';
+  if (state.browseAllSort === 'my-order') {
+    const myRanks = getMyWatchlistRankMap();
+    const cleanTitle = animeTitle.toLowerCase().trim();
+    if (myRanks.has(cleanTitle)) {
+      const myRank = myRanks.get(cleanTitle);
+      extraMetaHtml = `<div class="card-meta" style="color: var(--secondary); font-weight: 600; font-size: 0.75rem;"><i class="fa-solid fa-user-check"></i> My Rank #${myRank}</div>`;
+    } else {
+      extraMetaHtml = `<div class="card-meta" style="color: var(--text-muted); font-size: 0.75rem;"><i class="fa-regular fa-circle"></i> Not in your list</div>`;
+    }
+  } else if (watchedAt && (state.browseAllSort === 'watched-desc' || state.browseAllSort === 'watched-asc')) {
+    const dStr = formatWatchedDate(watchedAt);
+    if (dStr) {
+      extraMetaHtml = `<div class="card-meta" style="color: var(--text-muted); font-size: 0.72rem;"><i class="fa-regular fa-clock"></i> ${dStr}</div>`;
+    }
+  }
 
   const card = document.createElement('div');
   card.className = 'anime-card';
@@ -4063,9 +4203,10 @@ function createBrowseAnimeCard(animeTitle, idx, categoryName = null, watchedAt =
         </div>
       ` : `
         <div class="card-meta">
-          <span>Ranked #${idx + 1}</span>
+          <span>Ranked #${idx + 1}${originalIdx !== null && (state.browseAllSort && state.browseAllSort !== 'default') ? ` <small style="opacity:0.7">(Orig: #${originalIdx + 1})</small>` : ''}</span>
         </div>
       `}
+      ${extraMetaHtml}
     </div>
   `;
 
@@ -4811,8 +4952,122 @@ window.escapeAttr = escapeAttr;
 window.escapeHtml = escapeHtml;
 
 // ==========================================
-// WATCHERS POPUP MODAL LOGIC
+// WATCHERS POPUP MODAL LOGIC (Instant / Zero-Lag)
 // ==========================================
+function getPreloadedWatchers(animeTitle) {
+  if (!animeTitle) return null;
+  const key = animeTitle.toLowerCase().trim();
+
+  // 1. Direct hit from startup preloaded watchersMap
+  if (state.communityWatchers && Array.isArray(state.communityWatchers[key])) {
+    return state.communityWatchers[key];
+  }
+
+  // 2. In-memory computation from preloaded communityWatchlists
+  if (state.communityWatchlists && state.communityUsers) {
+    const watchers = [];
+    const usersMap = new Map();
+    (state.communityUsers || []).forEach(u => usersMap.set(u._id.toString(), u));
+
+    for (const uid in state.communityWatchlists) {
+      const wl = state.communityWatchlists[uid];
+      if (!wl || !Array.isArray(wl.categories)) continue;
+
+      let rank = null;
+      let runningRank = 0;
+      const sortedCats = [...wl.categories].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+      for (const cat of sortedCats) {
+        for (const a of (cat.animes || [])) {
+          if (a && a.trim()) {
+            runningRank++;
+            if (rank === null && a.toLowerCase().trim() === key) {
+              rank = runningRank;
+            }
+          }
+        }
+      }
+
+      if (rank !== null) {
+        const u = usersMap.get(uid) || { username: 'User', totalWatched: runningRank };
+        watchers.push({
+          userId: uid,
+          username: u.username || 'User',
+          rank,
+          totalWatched: u.totalWatched || runningRank
+        });
+      }
+    }
+
+    watchers.sort((a, b) => {
+      const rankA = (a.rank != null) ? a.rank : Infinity;
+      const rankB = (b.rank != null) ? b.rank : Infinity;
+      if (rankA !== rankB) return rankA - rankB;
+      const countA = a.totalWatched || 0;
+      const countB = b.totalWatched || 0;
+      if (countB !== countA) return countB - countA;
+      return (a.username || '').localeCompare(b.username || '');
+    });
+
+    if (!state.communityWatchers) state.communityWatchers = {};
+    state.communityWatchers[key] = watchers;
+    return watchers;
+  }
+
+  return null;
+}
+
+function renderWatchersContent(animeTitle, watchers, countBadgeEl, listEl) {
+  const count = watchers ? watchers.length : 0;
+  if (countBadgeEl) {
+    countBadgeEl.innerHTML = `<i class="fa-solid fa-fire text-highlight"></i> ${count} user${count === 1 ? '' : 's'} watching`;
+  }
+
+  if (!listEl) return;
+
+  if (!watchers || watchers.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+        <i class="fa-regular fa-face-meh" style="font-size: 1.75rem; margin-bottom: 0.5rem; display: block; color: var(--text-dim);"></i>
+        No community members have added "${escapeHtml(animeTitle)}" to their watchlist yet.
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = watchers.map(w => {
+    const isMe = Boolean(state.currentUser && (w.userId === state.currentUser._id || w.username === state.currentUser.username));
+    return `
+      <div class="watcher-item">
+        <div class="watcher-user-info">
+          <div class="watcher-avatar">
+            <i class="fa-solid fa-user-ninja"></i>
+          </div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span style="font-weight: 700; font-size: 0.95rem; color: #fff;">${escapeHtml(w.username)}</span>
+              ${isMe ? '<span class="user-dir-you-badge">You</span>' : ''}
+            </div>
+            <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.45rem;">
+              <span class="watcher-rank-tag">
+                <i class="fa-solid fa-trophy"></i> #${w.rank || 1}
+              </span>
+              ${w.totalWatched ? `
+                <span style="font-size: 0.75rem; color: var(--text-dim);" title="Total anime watched">
+                  (${w.totalWatched} watched)
+                </span>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-outline btn-sm btn-icon" onclick="closeModal('modal-watchers'); inspectUserWatchlist('${w.userId}')" title="View ${escapeAttr(w.username)}'s watchlist" aria-label="View Profile">
+          <i class="fa-solid fa-eye"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
 async function showAnimeWatchersModal(animeTitle) {
   if (!animeTitle) return;
   const modal = document.getElementById('modal-watchers');
@@ -4831,6 +5086,16 @@ async function showAnimeWatchersModal(animeTitle) {
   if (titleEl) {
     titleEl.textContent = animeTitle;
   }
+
+  // 1. Instant Zero-Lag Display from Preloaded Data
+  const preloaded = getPreloadedWatchers(animeTitle);
+  if (preloaded) {
+    renderWatchersContent(animeTitle, preloaded, countBadgeEl, listEl);
+    modal.classList.remove('hidden');
+    return;
+  }
+
+  // 2. Fallback to API if not yet in memory
   if (countBadgeEl) {
     countBadgeEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading...`;
   }
@@ -4848,9 +5113,7 @@ async function showAnimeWatchersModal(animeTitle) {
   try {
     const res = await apiRequest(`/api/animes/watchers?title=${encodeURIComponent(animeTitle)}`);
     const watchers = res.watchers || [];
-    const count = res.count !== undefined ? res.count : watchers.length;
 
-    // Strict sort: rank ASC (#1, #2...), tie-breaker: totalWatched DESC, tie-breaker: username ASC
     watchers.sort((a, b) => {
       const rankA = (a.rank != null) ? a.rank : Infinity;
       const rankB = (b.rank != null) ? b.rank : Infinity;
@@ -4861,53 +5124,7 @@ async function showAnimeWatchersModal(animeTitle) {
       return (a.username || '').localeCompare(b.username || '');
     });
 
-    if (countBadgeEl) {
-      countBadgeEl.innerHTML = `<i class="fa-solid fa-fire text-highlight"></i> ${count} user${count === 1 ? '' : 's'} watching`;
-    }
-
-    if (!listEl) return;
-
-    if (watchers.length === 0) {
-      listEl.innerHTML = `
-        <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
-          <i class="fa-regular fa-face-meh" style="font-size: 1.75rem; margin-bottom: 0.5rem; display: block; color: var(--text-dim);"></i>
-          No community members have added "${escapeHtml(animeTitle)}" to their watchlist yet.
-        </div>
-      `;
-      return;
-    }
-
-    listEl.innerHTML = watchers.map(w => {
-      const isMe = Boolean(state.currentUser && (w.userId === state.currentUser._id || w.username === state.currentUser.username));
-      return `
-        <div class="watcher-item">
-          <div class="watcher-user-info">
-            <div class="watcher-avatar">
-              <i class="fa-solid fa-user-ninja"></i>
-            </div>
-            <div>
-              <div style="display: flex; align-items: center; gap: 0.4rem;">
-                <span style="font-weight: 700; font-size: 0.95rem; color: #fff;">${escapeHtml(w.username)}</span>
-                ${isMe ? '<span class="user-dir-you-badge">You</span>' : ''}
-              </div>
-              <div style="margin-top: 0.25rem; display: flex; align-items: center; gap: 0.45rem;">
-                <span class="watcher-rank-tag">
-                  <i class="fa-solid fa-trophy"></i> #${w.rank || 1}
-                </span>
-                ${w.totalWatched ? `
-                  <span style="font-size: 0.75rem; color: var(--text-dim);" title="Total anime watched">
-                    (${w.totalWatched} watched)
-                  </span>
-                ` : ''}
-              </div>
-            </div>
-          </div>
-          <button class="btn btn-outline btn-sm btn-icon" onclick="closeModal('modal-watchers'); inspectUserWatchlist('${w.userId}')" title="View ${escapeAttr(w.username)}'s watchlist" aria-label="View Profile">
-            <i class="fa-solid fa-eye"></i>
-          </button>
-        </div>
-      `;
-    }).join('');
+    renderWatchersContent(animeTitle, watchers, countBadgeEl, listEl);
   } catch (err) {
     console.error('Failed to load watchers:', err);
     if (countBadgeEl) countBadgeEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error`;
@@ -5123,7 +5340,17 @@ function copyAllDisplayedAnimeNames() {
         });
       }
       const sortVal = state.browseAllSort || 'default';
-      if (sortVal === 'alpha-asc') {
+      if (sortVal === 'my-order') {
+        const myRanks = getMyWatchlistRankMap();
+        allWatched.sort((a, b) => {
+          const keyA = a.title.toLowerCase().trim();
+          const keyB = b.title.toLowerCase().trim();
+          const rankA = myRanks.has(keyA) ? myRanks.get(keyA) : Infinity;
+          const rankB = myRanks.has(keyB) ? myRanks.get(keyB) : Infinity;
+          if (rankA !== rankB) return rankA - rankB;
+          return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+        });
+      } else if (sortVal === 'alpha-asc') {
         allWatched.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
       } else if (sortVal === 'alpha-desc') {
         allWatched.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
@@ -5141,7 +5368,22 @@ function copyAllDisplayedAnimeNames() {
           const rankSumB = state.globalRankStats[b.title] ?? 0;
           const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
           const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
-          return avgA - avgB;
+          if (avgA !== avgB) return avgA - avgB;
+          return popB - popA;
+        });
+      } else if (sortVal === 'watched-desc') {
+        allWatched.sort((a, b) => {
+          const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+          const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+          if (tB !== tA) return tB - tA;
+          return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+        });
+      } else if (sortVal === 'watched-asc') {
+        allWatched.sort((a, b) => {
+          const tA = a.watchedAt ? new Date(a.watchedAt).getTime() : 0;
+          const tB = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
+          if (tA !== tB) return tA - tB;
+          return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
         });
       }
       titles = allWatched.map(i => i.title);
@@ -5151,7 +5393,60 @@ function copyAllDisplayedAnimeNames() {
         (c.categoryName && c.categoryName.toLowerCase() === state.browseActiveCategoryFilter.toLowerCase())
       );
       if (activeCat && activeCat.animes) {
-        titles = [...activeCat.animes];
+        let catTitles = [...activeCat.animes];
+        const sortVal = state.browseAllSort || 'default';
+        const watchedDates = state.browseUserWatchlist?.animeWatchedDates || {};
+        if (sortVal === 'my-order') {
+          const myRanks = getMyWatchlistRankMap();
+          catTitles.sort((a, b) => {
+            const keyA = a.toLowerCase().trim();
+            const keyB = b.toLowerCase().trim();
+            const rankA = myRanks.has(keyA) ? myRanks.get(keyA) : Infinity;
+            const rankB = myRanks.has(keyB) ? myRanks.get(keyB) : Infinity;
+            if (rankA !== rankB) return rankA - rankB;
+            return a.localeCompare(b, undefined, { sensitivity: 'base' });
+          });
+        } else if (sortVal === 'alpha-asc') {
+          catTitles.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        } else if (sortVal === 'alpha-desc') {
+          catTitles.sort((a, b) => b.localeCompare(a, undefined, { sensitivity: 'base' }));
+        } else if (sortVal === 'popularity-desc') {
+          catTitles.sort((a, b) => {
+            const popA = state.globalStats[a] ?? 0;
+            const popB = state.globalStats[b] ?? 0;
+            return popB - popA;
+          });
+        } else if (sortVal === 'favorite') {
+          catTitles.sort((a, b) => {
+            const popA = state.globalStats[a] ?? 0;
+            const popB = state.globalStats[b] ?? 0;
+            const rankSumA = state.globalRankStats[a] ?? 0;
+            const rankSumB = state.globalRankStats[b] ?? 0;
+            const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+            const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+            if (avgA !== avgB) return avgA - avgB;
+            return popB - popA;
+          });
+        } else if (sortVal === 'watched-desc') {
+          catTitles.sort((a, b) => {
+            const wKeyA = a.toLowerCase().trim();
+            const wKeyB = b.toLowerCase().trim();
+            const tA = watchedDates[wKeyA] ? new Date(watchedDates[wKeyA]).getTime() : 0;
+            const tB = watchedDates[wKeyB] ? new Date(watchedDates[wKeyB]).getTime() : 0;
+            if (tB !== tA) return tB - tA;
+            return a.localeCompare(b, undefined, { sensitivity: 'base' });
+          });
+        } else if (sortVal === 'watched-asc') {
+          catTitles.sort((a, b) => {
+            const wKeyA = a.toLowerCase().trim();
+            const wKeyB = b.toLowerCase().trim();
+            const tA = watchedDates[wKeyA] ? new Date(watchedDates[wKeyA]).getTime() : 0;
+            const tB = watchedDates[wKeyB] ? new Date(watchedDates[wKeyB]).getTime() : 0;
+            if (tA !== tB) return tA - tB;
+            return a.localeCompare(b, undefined, { sensitivity: 'base' });
+          });
+        }
+        titles = catTitles;
       }
     }
   } else if (state.currentView === 'compare') {

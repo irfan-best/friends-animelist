@@ -168,7 +168,7 @@
                   <option value="default">Category Order (Default)</option>
                   <option value="alpha-asc">ASC (A-Z)</option>
                   <option value="alpha-desc">DESC (Z-A)</option>
-                  <option value="popularity-desc">Populary</option>
+                  <option value="popularity-desc">Popularity</option>
                   <option value="favorite">Favorite (Avg Rank)</option>
                   <option value="watched-desc">Watched Date (Newest First)</option>
                   <option value="watched-asc">Watched Date (Oldest First)</option>
@@ -277,7 +277,7 @@
           <div class="controls-group">
             <div class="sorting-box">
               <select id="unwatched-sort" class="select-dropdown" onchange="handleUnwatchedSortChange()" title="Sort Not Watched">
-                <option value="popularity-desc" selected>Populary</option>
+                <option value="popularity-desc" selected>Popularity</option>
                 <option value="favorite">Favorite (Avg Rank)</option>
                 <option value="alpha-asc">ASC (A-Z)</option>
                 <option value="alpha-desc">DESC (Z-A)</option>
@@ -350,9 +350,10 @@
                   <div id="browse-all-sort-wrap" class="sorting-box watchlist-all-sorting">
                     <select id="browse-all-sort" class="select-dropdown select-dropdown-sm" onchange="handleBrowseAllSortChange()" title="Sort Watchlist">
                       <option value="default">Category Order (Default)</option>
+                      <option value="my-order">My Watchlist Order</option>
                       <option value="alpha-asc">ASC (A-Z)</option>
                       <option value="alpha-desc">DESC (Z-A)</option>
-                      <option value="popularity-desc">Populary</option>
+                      <option value="popularity-desc">Popularity</option>
                       <option value="favorite">Favorite (Avg Rank)</option>
                       <option value="watched-desc">Watched Date (Newest First)</option>
                       <option value="watched-asc">Watched Date (Oldest First)</option>
@@ -462,7 +463,7 @@
             <div class="sorting-box">
               <select id="compare-sort" class="select-dropdown" onchange="renderCompareResults()" title="Sort Comparison">
                 <option value="destination-rank" selected>Destination Ranking</option>
-                <option value="popularity-desc">Populary</option>
+                <option value="popularity-desc">Popularity</option>
                 <option value="favorite">Favorite (Avg Rank)</option>
                 <option value="alpha-asc">ASC (A-Z)</option>
                 <option value="alpha-desc">DESC (Z-A)</option>
@@ -514,7 +515,7 @@
             <div class="sorting-box">
               <select id="common-sort" class="select-dropdown" onchange="renderCommonResults()" title="Sort Common Anime">
                 <option value="least-rank" selected>Least Rank (Default)</option>
-                <option value="popularity-desc">Populary</option>
+                <option value="popularity-desc">Popularity</option>
                 <option value="alpha-asc">ASC (A-Z)</option>
                 <option value="alpha-desc">DESC (Z-A)</option>
               </select>
@@ -1210,7 +1211,12 @@
     </div>
   </div>
 
+  <!-- Floating Scroll-To-Top Button -->
+  <button id="btn-scroll-top" class="btn-scroll-top" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="Go to top" aria-label="Go to top">
+    <i class="fa-solid fa-arrow-up"></i>
+  </button>
+
   <!-- Application Scripts -->
-  <script src="app.js?v=6.1"></script>
+  <script src="app.js?v=6.3"></script>
 </body>
 </html>

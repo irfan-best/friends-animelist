@@ -24,7 +24,7 @@ const animeWatchedDateSchema = new mongoose.Schema({
   },
   watchedAt: {
     type: Date,
-    default: Date.now
+    default: () => new Date('2026-09-09T12:00:00.000Z')
   }
 }, { _id: false });
 
