@@ -57,6 +57,19 @@ const state = {
     browse: { year: 'all', period: 'all' }
   },
 
+  // Season Filtering for Not Watched / All Images view (from seasons.js)
+  unwatchedSeasonFilter: {
+    year: null,
+    season: null,
+    isDefault: true
+  },
+  seasonData: {
+    blocks: [],
+    seasonMap: {},
+    animeSeasonsMap: {},
+    years: []
+  },
+
   // Row focus tracking
   focusedRowIndex: -1,
 
@@ -79,6 +92,7 @@ window.state = state;
 // INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
+  initSeasonsData();
   initApp();
   initKeyboardShortcuts();
   initImageRenameHandler();
@@ -303,6 +317,7 @@ async function loadCoreData() {
     ]);
 
     state.allAnimeList = animes || [];
+    initSeasonsData();
     state.globalStats = statsData.stats || {};
     state.globalRankStats = statsData.rankStats || {};
     state.userWatchlist = watchlistData.watchlist;
@@ -822,11 +837,393 @@ function handleUnwatchedSortChange() {
 }
 window.handleUnwatchedSortChange = handleUnwatchedSortChange;
 
-function formatWatchedDate(dateStr) {
+// ==========================================
+// SEASONS (BROADCAST/RELEASE) FILTER & DATA
+// ==========================================
+function normalizeSeasonName(seasonStr) {
+  if (!seasonStr) return '';
+  const s = seasonStr.trim().toLowerCase();
+  if (s === 'autumn' || s === 'fall') return 'fall';
+  if (s === 'winter') return 'winter';
+  if (s === 'spring') return 'spring';
+  if (s === 'summer') return 'summer';
+  return s;
+}
+
+function getSeasonDisplayName(seasonKey) {
+  const map = {
+    winter: 'Winter',
+    spring: 'Spring',
+    summer: 'Summer',
+    fall: 'Fall / Autumn'
+  };
+  return map[seasonKey] || (seasonKey.charAt(0).toUpperCase() + seasonKey.slice(1));
+}
+
+function parseSeasonsData(rawText) {
+  const result = {
+    blocks: [],
+    seasonMap: {},
+    animeSeasonsMap: {},
+    years: []
+  };
+
+  if (!rawText || typeof rawText !== 'string') return result;
+
+  const lines = rawText.split(/\r?\n/);
+  let currentBlock = null;
+  const yearsSet = new Set();
+
+  for (let rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('var ') || line.startsWith('`')) continue;
+
+    const m = line.match(/^(\d{4})\s*,\s*([A-Za-z]+)\s*:/);
+    if (m) {
+      const year = m[1];
+      const rawSeason = m[2];
+      const normalizedSeason = normalizeSeasonName(rawSeason);
+      const key = `${year}-${normalizedSeason}`;
+
+      yearsSet.add(year);
+
+      currentBlock = result.blocks.find(b => b.key === key);
+      if (!currentBlock) {
+        currentBlock = {
+          year,
+          season: normalizedSeason,
+          rawSeason,
+          key,
+          label: `${getSeasonDisplayName(normalizedSeason)} ${year}`,
+          animes: []
+        };
+        result.blocks.push(currentBlock);
+      }
+      continue;
+    }
+
+    if (currentBlock) {
+      const rawTitle = line;
+      const resolved = typeof resolveAnimeTitle === 'function' ? resolveAnimeTitle(rawTitle) : { title: rawTitle, imageUrl: `/images/${encodeURIComponent(rawTitle)}.jpg` };
+      const canonicalTitle = resolved.title || rawTitle;
+      const imageUrl = resolved.imageUrl || `/images/${encodeURIComponent(canonicalTitle)}.jpg`;
+
+      // Deduplicate within the exact same season block
+      const existingInBlock = currentBlock.animes.some(a => a.title.toLowerCase().trim() === canonicalTitle.toLowerCase().trim());
+      if (!existingInBlock) {
+        const item = {
+          rawTitle,
+          title: canonicalTitle,
+          imageUrl,
+          orderIndex: currentBlock.animes.length,
+          year: currentBlock.year,
+          season: currentBlock.season,
+          seasonKey: currentBlock.key,
+          seasonLabel: currentBlock.label
+        };
+        currentBlock.animes.push(item);
+
+        // Map to animeSeasonsMap (allowing an anime to be in multiple seasons)
+        const animeKey = canonicalTitle.toLowerCase().trim();
+        if (!result.animeSeasonsMap[animeKey]) {
+          result.animeSeasonsMap[animeKey] = [];
+        }
+        if (!result.animeSeasonsMap[animeKey].some(s => s.key === currentBlock.key)) {
+          result.animeSeasonsMap[animeKey].push({
+            year: currentBlock.year,
+            season: currentBlock.season,
+            key: currentBlock.key,
+            display: `${getSeasonDisplayName(currentBlock.season)} ${currentBlock.year}`,
+            orderIndex: item.orderIndex
+          });
+        }
+      }
+    }
+  }
+
+  for (const block of result.blocks) {
+    result.seasonMap[block.key] = block.animes;
+  }
+
+  result.years = Array.from(yearsSet).sort((a, b) => Number(b) - Number(a));
+  return result;
+}
+
+function getCurrentSeasonInfo() {
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = now.getMonth() + 1; // 1-12
+  let season = 'winter';
+  if (month >= 4 && month <= 6) {
+    season = 'spring';
+  } else if (month >= 7 && month <= 9) {
+    season = 'summer';
+  } else if (month >= 10 && month <= 12) {
+    season = 'fall';
+  }
+  return { year, season };
+}
+
+function getDefaultSeasonFilter() {
+  const current = getCurrentSeasonInfo();
+  if (!state.seasonData || !state.seasonData.blocks || state.seasonData.blocks.length === 0) {
+    return current;
+  }
+
+  // 1. Check if exact current year + season exists in season blocks
+  const exactMatch = state.seasonData.blocks.find(b => b.year === current.year && b.season === current.season);
+  if (exactMatch) {
+    return { year: current.year, season: current.season };
+  }
+
+  // 2. Check if current year exists in blocks, pick first available season for that year
+  const yearMatch = state.seasonData.blocks.find(b => b.year === current.year);
+  if (yearMatch) {
+    return { year: current.year, season: yearMatch.season };
+  }
+
+  // 3. Fallback to latest available year + season in season blocks
+  if (state.seasonData.blocks[0]) {
+    return { year: state.seasonData.blocks[0].year, season: state.seasonData.blocks[0].season };
+  }
+
+  return current;
+}
+
+function initSeasonsData() {
+  const raw = typeof window !== 'undefined' && window.seasons ? window.seasons : '';
+  state.seasonData = parseSeasonsData(raw);
+
+  // Initialize unwatchedSeasonFilter with current season default if not set or if at default
+  if (!state.unwatchedSeasonFilter || state.unwatchedSeasonFilter.isDefault || (!state.unwatchedSeasonFilter.year && !state.unwatchedSeasonFilter.season)) {
+    const defaultSeason = getDefaultSeasonFilter();
+    state.unwatchedSeasonFilter = {
+      year: defaultSeason.year,
+      season: defaultSeason.season,
+      isDefault: true
+    };
+  }
+
+  populateUnwatchedSeasonOptions();
+}
+
+function populateUnwatchedSeasonOptions() {
+  const yearSelect = document.getElementById('unwatched-season-year');
+  const seasonSelect = document.getElementById('unwatched-season-period');
+  const clearBtn = document.getElementById('btn-clear-season-filter');
+  const currentBtn = document.getElementById('btn-current-season');
+  const sortSelect = document.getElementById('unwatched-sort');
+  const seasonSortOpt = document.getElementById('opt-unwatched-sort-season');
+
+  if (!state.seasonData) return;
+
+  const currentDef = getDefaultSeasonFilter();
+  const currentVal = state.unwatchedSeasonFilter?.year || (yearSelect ? yearSelect.value : null) || currentDef.year;
+  const currentSeasonVal = state.unwatchedSeasonFilter?.season || (seasonSelect ? seasonSelect.value : null) || currentDef.season;
+  const years = state.seasonData.years || [];
+
+  if (yearSelect) {
+    yearSelect.innerHTML = '<option value="all">All Years</option>' +
+      years.map(y => `<option value="${escapeAttr(y)}">${escapeHtml(y)}</option>`).join('');
+
+    if (years.includes(currentVal) || currentVal === 'all') {
+      yearSelect.value = currentVal;
+    } else if (years.length > 0) {
+      yearSelect.value = years[0];
+    }
+  }
+
+  if (seasonSelect) {
+    seasonSelect.value = currentSeasonVal;
+  }
+
+  const isCurrent = (state.unwatchedSeasonFilter?.year === currentDef.year && state.unwatchedSeasonFilter?.season === currentDef.season);
+  if (currentBtn) {
+    currentBtn.classList.toggle('active', isCurrent);
+    currentBtn.title = `Current Season: ${getSeasonDisplayName(currentDef.season)} ${currentDef.year} (Click to set)`;
+  }
+
+  const isSeasonActive = (state.unwatchedSeasonFilter?.year !== 'all' || state.unwatchedSeasonFilter?.season !== 'all');
+  if (clearBtn) {
+    clearBtn.classList.toggle('hidden', !isSeasonActive);
+  }
+
+  if (seasonSortOpt) {
+    seasonSortOpt.hidden = !isSeasonActive;
+    if (isSeasonActive && sortSelect && (!sortSelect.value || sortSelect.value === 'popularity-desc')) {
+      sortSelect.value = 'season';
+    }
+  }
+}
+
+function handleUnwatchedSeasonChange() {
+  const yearSelect = document.getElementById('unwatched-season-year');
+  const seasonSelect = document.getElementById('unwatched-season-period');
+  const clearBtn = document.getElementById('btn-clear-season-filter');
+  const currentBtn = document.getElementById('btn-current-season');
+  const sortSelect = document.getElementById('unwatched-sort');
+
+  const year = (yearSelect && yearSelect.value) ? yearSelect.value : 'all';
+  const season = (seasonSelect && seasonSelect.value) ? seasonSelect.value : 'all';
+
+  const currentDef = getDefaultSeasonFilter();
+  const isDefault = (year === currentDef.year && season === currentDef.season);
+
+  state.unwatchedSeasonFilter = { year, season, isDefault };
+
+  const isSeasonActive = (year !== 'all' || season !== 'all');
+  if (clearBtn) {
+    clearBtn.classList.toggle('hidden', !isSeasonActive);
+  }
+
+  if (currentBtn) {
+    currentBtn.classList.toggle('active', isDefault);
+  }
+
+  // Update sort dropdown: show / select Season Order option
+  const seasonSortOpt = document.getElementById('opt-unwatched-sort-season');
+  if (seasonSortOpt) {
+    seasonSortOpt.hidden = !isSeasonActive;
+    if (isSeasonActive && sortSelect && sortSelect.value !== 'alpha-asc' && sortSelect.value !== 'alpha-desc' && sortSelect.value !== 'favorite') {
+      sortSelect.value = 'season';
+    } else if (!isSeasonActive && sortSelect && sortSelect.value === 'season') {
+      sortSelect.value = 'popularity-desc';
+    }
+  }
+
+  state.pagination.unwatched.page = 1;
+  updateUrlParams('unwatched', null, null, 1);
+  renderUnwatchedView();
+}
+
+function clearUnwatchedSeasonFilter() {
+  const yearSelect = document.getElementById('unwatched-season-year');
+  const seasonSelect = document.getElementById('unwatched-season-period');
+  if (yearSelect) yearSelect.value = 'all';
+  if (seasonSelect) seasonSelect.value = 'all';
+  state.unwatchedSeasonFilter = { year: 'all', season: 'all', isDefault: false };
+  handleUnwatchedSeasonChange();
+}
+
+function setUnwatchedSeasonFilter(year, season) {
+  const yearSelect = document.getElementById('unwatched-season-year');
+  const seasonSelect = document.getElementById('unwatched-season-period');
+  if (yearSelect && year) yearSelect.value = year;
+  if (seasonSelect && season) seasonSelect.value = season;
+  handleUnwatchedSeasonChange();
+}
+
+function applyCurrentSeasonFilter() {
+  const currentDef = getDefaultSeasonFilter();
+  setUnwatchedSeasonFilter(currentDef.year, currentDef.season);
+}
+
+function getFilteredUnwatchedAnimeList(watchedSet, query, sortType) {
+  const { year, season } = state.unwatchedSeasonFilter || { year: 'all', season: 'all' };
+  const isSeasonActive = (year !== 'all' || season !== 'all');
+
+  let baseList = [];
+
+  if (isSeasonActive && state.seasonData?.blocks?.length > 0) {
+    const matchingBlocks = state.seasonData.blocks.filter(b => {
+      const matchYear = (year === 'all' || b.year === year);
+      const matchSeason = (season === 'all' || b.season === season);
+      return matchYear && matchSeason;
+    });
+
+    const seen = new Set();
+    matchingBlocks.forEach(b => {
+      b.animes.forEach(a => {
+        const k = a.title.toLowerCase().trim();
+        if (!seen.has(k)) {
+          seen.add(k);
+          baseList.push(a);
+        }
+      });
+    });
+  } else {
+    baseList = [...state.allAnimeList];
+  }
+
+  let list = [];
+  if (state.unwatchedSearchScope === 'global') {
+    list = [...baseList];
+  } else {
+    list = baseList.filter(anime => !watchedSet.has(anime.title.toLowerCase().trim()));
+  }
+
+  if (query) {
+    list = list.filter(anime => anime.title.toLowerCase().includes(query));
+  }
+
+  const effectiveSort = sortType || (isSeasonActive ? 'season' : 'popularity-desc');
+  if (effectiveSort === 'season' && isSeasonActive) {
+    list.sort((a, b) => {
+      const idxA = a.orderIndex !== undefined ? a.orderIndex : 999999;
+      const idxB = b.orderIndex !== undefined ? b.orderIndex : 999999;
+      return idxA - idxB;
+    });
+  } else if (effectiveSort === 'alpha-asc') {
+    list.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  } else if (effectiveSort === 'alpha-desc') {
+    list.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
+  } else if (effectiveSort === 'favorite') {
+    list.sort((a, b) => {
+      const keyA = a.title.toLowerCase().trim();
+      const keyB = b.title.toLowerCase().trim();
+      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+      const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
+      const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
+      const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
+      const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
+      if (avgA !== avgB) return avgA - avgB;
+      if (popB !== popA) return popB - popA;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    });
+  } else if (effectiveSort === 'popularity-desc' || effectiveSort === 'default') {
+    list.sort((a, b) => {
+      const keyA = a.title.toLowerCase().trim();
+      const keyB = b.title.toLowerCase().trim();
+      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
+      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
+      if (popB !== popA) return popB - popA;
+
+      if (popA > 0) {
+        const rankA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? Infinity;
+        const rankB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? Infinity;
+        if (rankA !== rankB) return rankA - rankB;
+      }
+
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    });
+  }
+
+  return list;
+}
+
+window.handleUnwatchedSeasonChange = handleUnwatchedSeasonChange;
+window.clearUnwatchedSeasonFilter = clearUnwatchedSeasonFilter;
+window.setUnwatchedSeasonFilter = setUnwatchedSeasonFilter;
+window.initSeasonsData = initSeasonsData;
+window.getFilteredUnwatchedAnimeList = getFilteredUnwatchedAnimeList;
+window.getCurrentSeasonInfo = getCurrentSeasonInfo;
+window.getDefaultSeasonFilter = getDefaultSeasonFilter;
+window.applyCurrentSeasonFilter = applyCurrentSeasonFilter;
+
+
+function formatWatchedDate(dateStr, includeSeconds = true, dateOnly = false) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const datePart = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (dateOnly) return datePart;
+  const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
+  if (includeSeconds) {
+    timeOptions.second = '2-digit';
+  }
+  const timePart = d.toLocaleTimeString('en-US', timeOptions);
+  return `${datePart}, ${timePart}`;
 }
 window.formatWatchedDate = formatWatchedDate;
 
@@ -1589,7 +1986,7 @@ function renderWatchlistView() {
       (cat.animes || []).forEach((animeTitle, animeIdx) => {
         if (!query || animeTitle.toLowerCase().includes(query)) {
           const wKey = animeTitle.toLowerCase().trim();
-          const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
+          const watchedAt = watchedDates[wKey] || new Date().toISOString();
           allWatched.push({
             title: animeTitle,
             categoryId: cat._id,
@@ -1858,6 +2255,16 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
 
   if (isSelected) card.classList.add('selected');
 
+  let extraMetaHtml = '';
+  if (watchedAt) {
+    const dStr = formatWatchedDate(watchedAt, true);
+    if (dStr) {
+      extraMetaHtml = `<div class="card-meta" title="Watched: ${escapeAttr(dStr)}" style="color: var(--text-muted); font-size: 0.72rem; margin-top: 2px;"><i class="fa-regular fa-clock"></i> ${escapeHtml(dStr)}</div>`;
+    }
+  }
+
+  const watchedTooltip = watchedAt ? ` (Watched: ${formatWatchedDate(watchedAt, true)})` : '';
+
   card.innerHTML = `
     <div class="card-poster-wrap">
       <div class="card-select-checkbox">${isSelected ? '<i class="fa-solid fa-check"></i>' : ''}</div>
@@ -1869,12 +2276,13 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
       <div class="copy-hover-badge"><i class="fa-regular fa-copy"></i> Click to copy</div>
     </div>
     <div class="card-content">
-      <h4 class="anime-title" title="${escapeAttr(title)}">${escapeHtml(title)}</h4>
+      <h4 class="anime-title" title="${escapeAttr(title + watchedTooltip)}">${escapeHtml(title)}</h4>
       ${categoryName ? `
         <div class="card-cat-badge" title="Category: ${escapeAttr(categoryName)}">
           <i class="fa-solid fa-folder"></i> ${escapeHtml(categoryName)}
         </div>
       ` : ''}
+      ${extraMetaHtml}
       <div class="card-actions">
         ${!isAllView ? `
           <button class="btn btn-icon" title="Move up in category" onclick="event.stopPropagation(); reorderAnimeInCat('${categoryId}', '${escapeJsAttr(title)}', -1)" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
@@ -2102,7 +2510,8 @@ async function handleDrop(e, targetCatId) {
       method: 'POST',
       body: JSON.stringify({
         animeTitle,
-        categoryId: targetCatId
+        categoryId: targetCatId,
+        preserveDate: true
       })
     });
 
@@ -2561,6 +2970,13 @@ async function removeAnimeFromWatchlist(animeTitle) {
     });
 
     state.userWatchlist = res.watchlist;
+    const cleanTitle = animeTitle.toLowerCase().trim();
+    if (state.userWatchlist?.animeWatchedDates) {
+      delete state.userWatchlist.animeWatchedDates[cleanTitle];
+    }
+    if (state.communityWatchers) {
+      delete state.communityWatchers[cleanTitle];
+    }
     await refreshGlobalStats();
     updateHeaderBadges();
     renderWatchlistView();
@@ -2760,6 +3176,7 @@ async function handleRenameAnimeSubmit(e) {
     // 1. Refresh all anime images list
     const updatedAnimes = await apiRequest('/api/animes');
     state.allAnimeList = updatedAnimes || [];
+    initSeasonsData();
 
     // 2. Refresh current user's watchlist
     if (res.watchlist) {
@@ -2952,6 +3369,11 @@ function renderAdminUsersList() {
               <button type="button" class="btn btn-sm btn-primary" id="btn-save-pw-${user._id}" onclick="saveUserPassword('${user._id}', '${escapeJsAttr(user.username)}')">
                 <i class="fa-solid fa-check"></i> Save
               </button>
+              ${!isMe ? `
+                <button type="button" class="btn btn-sm btn-danger btn-icon" title="Permanently delete user and all data" onclick="openDeleteUserConfirm('${user._id}', '${escapeJsAttr(user.username)}')">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              ` : ''}
             </div>
           </div>
         `;
@@ -3016,6 +3438,103 @@ async function saveUserPassword(userId, username) {
   }
 }
 window.saveUserPassword = saveUserPassword;
+
+function openDeleteUserConfirm(userId, username) {
+  if (!canEditAnimeImage()) {
+    showToast("Access restricted to user 'Irfan Yoichi'.", 'warning');
+    return;
+  }
+  const modal = document.getElementById('modal-delete-user');
+  const nameEl = document.getElementById('delete-user-username');
+  const idInput = document.getElementById('delete-user-id');
+  if (!modal) return;
+
+  if (nameEl) nameEl.textContent = username;
+  if (idInput) idInput.value = userId;
+
+  modal.classList.remove('hidden');
+  syncModalOpenState();
+}
+window.openDeleteUserConfirm = openDeleteUserConfirm;
+
+function handleBrowseDeleteCurrentUser() {
+  if (!canEditAnimeImage()) return;
+  if (!state.browseSelectedUserId) return;
+  const user = (state.communityUsers || []).find(u => u._id === state.browseSelectedUserId);
+  if (!user) return;
+  openDeleteUserConfirm(user._id, user.username);
+}
+window.handleBrowseDeleteCurrentUser = handleBrowseDeleteCurrentUser;
+
+async function confirmDeleteUser() {
+  if (!canEditAnimeImage()) {
+    showToast("Access restricted to user 'Irfan Yoichi'.", 'warning');
+    return;
+  }
+
+  const idInput = document.getElementById('delete-user-id');
+  const userId = idInput ? idInput.value : null;
+  const btn = document.getElementById('btn-confirm-delete-user');
+
+  if (!userId) {
+    showToast('Invalid user selected.', 'error');
+    return;
+  }
+
+  const userObj = (state.adminUsersList || []).find(u => u._id === userId) || (state.communityUsers || []).find(u => u._id === userId);
+  const username = userObj ? userObj.username : (document.getElementById('delete-user-username')?.textContent || 'User');
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...';
+  }
+
+  try {
+    const res = await apiRequest(`/api/admin/users/${userId}`, {
+      method: 'DELETE'
+    });
+
+    closeModal('modal-delete-user');
+    showToast(res.message || `User "${username}" and all related data deleted.`, 'success', 3500);
+
+    // If deleted user was currently selected in Browse view or Compare view, reset references
+    if (state.browseSelectedUserId === userId) {
+      state.browseSelectedUserId = null;
+      state.browseUserWatchlist = null;
+    }
+    if (state.compareSourceId === userId) state.compareSourceId = null;
+    if (state.compareDestId === userId) state.compareDestId = null;
+
+    // 1. Remove from adminUsersList and re-render admin view if list is populated
+    state.adminUsersList = (state.adminUsersList || []).filter(u => u._id !== userId);
+    renderAdminUsersList();
+
+    // 2. Reload core data to refresh community watchlists, users, and stats
+    await loadCoreData();
+
+    // 3. Re-render active view
+    if (state.currentView === 'browse') {
+      renderBrowseView();
+    } else if (state.currentView === 'compare') {
+      renderCompareView();
+    } else if (state.currentView === 'leaderboard') {
+      renderLeaderboardView();
+    } else if (state.currentView === 'unwatched') {
+      renderUnwatchedView();
+    } else if (state.currentView === 'watchlist') {
+      renderWatchlistView();
+    }
+  } catch (err) {
+    console.error('Failed to delete user:', err);
+    showToast(err.message || 'Failed to delete user.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Delete Everything';
+    }
+  }
+}
+window.confirmDeleteUser = confirmDeleteUser;
 
 // ==========================================
 // ADMIN LOGIN HISTORY (IRFAN YOICHI EXCLUSIVE)
@@ -3374,6 +3893,15 @@ async function batchRemoveSelected() {
       body: JSON.stringify({ animeTitles: titles })
     });
     state.userWatchlist = res.watchlist;
+    titles.forEach(t => {
+      const clean = t.toLowerCase().trim();
+      if (state.userWatchlist?.animeWatchedDates) {
+        delete state.userWatchlist.animeWatchedDates[clean];
+      }
+      if (state.communityWatchers) {
+        delete state.communityWatchers[clean];
+      }
+    });
     state.selectedAnimes.clear();
     await refreshGlobalStats();
     updateHeaderBadges();
@@ -3391,12 +3919,21 @@ async function handleAssignCategorySubmit(e) {
 
   if (state.batchActionType && state.selectedAnimes.size > 0) {
     const titles = Array.from(state.selectedAnimes);
+    const nowIso = new Date().toISOString();
     try {
       const res = await apiRequest('/api/watchlist/batch-add', {
         method: 'POST',
-        body: JSON.stringify({ animeTitles: titles, categoryId })
+        body: JSON.stringify({ animeTitles: titles, categoryId, watchedAt: nowIso })
       });
       state.userWatchlist = res.watchlist;
+      if (!state.userWatchlist.animeWatchedDates) state.userWatchlist.animeWatchedDates = {};
+      titles.forEach(t => {
+        const k = t.toLowerCase().trim();
+        if (!state.userWatchlist.animeWatchedDates[k]) {
+          state.userWatchlist.animeWatchedDates[k] = nowIso;
+        }
+        if (state.communityWatchers) delete state.communityWatchers[k];
+      });
       state.selectedAnimes.clear();
       state.batchActionType = null;
       closeModal('modal-move-anime');
@@ -3415,14 +3952,23 @@ async function handleAssignCategorySubmit(e) {
   // Single anime assignment
   const animeTitle = document.getElementById('move-modal-anime-title').value;
   if (!animeTitle) return;
+  const nowIso = new Date().toISOString();
+  const cleanKey = animeTitle.toLowerCase().trim();
+  const alreadyInWatchlist = Boolean(findCategoryForAnime(animeTitle)) || Boolean(state.userWatchlist?.animeWatchedDates?.[cleanKey]);
 
   try {
     const res = await apiRequest('/api/watchlist/add-anime', {
       method: 'POST',
-      body: JSON.stringify({ animeTitle, categoryId })
+      body: JSON.stringify({ animeTitle, categoryId, watchedAt: nowIso })
     });
 
     state.userWatchlist = res.watchlist;
+    if (!state.userWatchlist.animeWatchedDates) state.userWatchlist.animeWatchedDates = {};
+    if (!alreadyInWatchlist && !state.userWatchlist.animeWatchedDates[cleanKey]) {
+      state.userWatchlist.animeWatchedDates[cleanKey] = nowIso;
+    }
+    if (state.communityWatchers) delete state.communityWatchers[cleanKey];
+
     closeModal('modal-move-anime');
     await refreshGlobalStats();
     updateHeaderBadges();
@@ -3435,7 +3981,11 @@ async function handleAssignCategorySubmit(e) {
       renderCompareResults();
     }
 
-    showToast(`Added "${animeTitle}" to category!`, 'success');
+    if (alreadyInWatchlist) {
+      showToast(`Moved "${animeTitle}" to category!`, 'success');
+    } else {
+      showToast(`Added "${animeTitle}" to category!`, 'success');
+    }
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -3457,63 +4007,24 @@ function renderUnwatchedView() {
   updateUnwatchedSearchBadge();
 
   const watchedSet = getWatchedTitlesSet();
-  
-  // Filter for unwatched anime (or all anime in global scope)
-  let unwatchedList = [];
-  if (state.unwatchedSearchScope === 'global') {
-    unwatchedList = [...state.allAnimeList];
-  } else {
-    unwatchedList = state.allAnimeList.filter(anime => !watchedSet.has(anime.title.toLowerCase().trim()));
-  }
-
-  // Filter by search query
-  if (query) {
-    unwatchedList = unwatchedList.filter(anime => anime.title.toLowerCase().includes(query));
-  }
-
-  // Apply sorting options
-  const sortType = sortSelect.value;
-  if (sortType === 'alpha-asc') {
-    unwatchedList.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-  } else if (sortType === 'alpha-desc') {
-    unwatchedList.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
-  } else if (sortType === 'popularity-desc') {
-    unwatchedList.sort((a, b) => {
-      const keyA = a.title.toLowerCase().trim();
-      const keyB = b.title.toLowerCase().trim();
-      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
-      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
-      if (popB !== popA) return popB - popA;
-
-      if (popA > 0) {
-        const rankA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? Infinity;
-        const rankB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? Infinity;
-        if (rankA !== rankB) return rankA - rankB;
-      }
-
-      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
-    });
-  } else if (sortType === 'favorite') {
-    unwatchedList.sort((a, b) => {
-      const keyA = a.title.toLowerCase().trim();
-      const keyB = b.title.toLowerCase().trim();
-      const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
-      const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
-      const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
-      const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
-      const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
-      const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
-      if (avgA !== avgB) return avgA - avgB;
-      if (popB !== popA) return popB - popA;
-      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
-    });
-  }
+  const isSeasonActive = (state.unwatchedSeasonFilter?.year !== 'all' || state.unwatchedSeasonFilter?.season !== 'all');
+  const sortType = sortSelect ? sortSelect.value : (isSeasonActive ? 'season' : 'popularity-desc');
+  const unwatchedList = getFilteredUnwatchedAnimeList(watchedSet, query, sortType);
 
   grid.innerHTML = '';
 
   const totalItems = unwatchedList.length;
   if (totalItems === 0) {
     emptyState.classList.remove('hidden');
+    const h3 = emptyState.querySelector('h3');
+    const p = emptyState.querySelector('p');
+    if (isSeasonActive) {
+      if (h3) h3.textContent = 'No Anime Found For This Season';
+      if (p) p.textContent = state.unwatchedSearchScope === 'global' ? 'No anime found matching this season filter.' : 'All anime in this season have been categorized in your watchlist.';
+    } else {
+      if (h3) h3.textContent = "Incredible! You've Watched Everything!";
+      if (p) p.textContent = 'Every available anime title is currently categorized in your watchlist.';
+    }
     renderPaginationControls('unwatched-pagination', 0, 'unwatched');
     return;
   }
@@ -3535,6 +4046,21 @@ function renderUnwatchedView() {
     const cat = findCategoryForAnime(anime.title);
     const isWatched = Boolean(cat);
 
+    // Get any season tags for this anime
+    const animeSeasons = state.seasonData?.animeSeasonsMap?.[key] || [];
+    let seasonBadgesHtml = '';
+    if (animeSeasons.length > 0) {
+      seasonBadgesHtml = `
+        <div class="card-season-badges">
+          ${animeSeasons.map(s => `
+            <span class="season-badge" onclick="event.stopPropagation(); setUnwatchedSeasonFilter('${escapeJsAttr(s.year)}', '${escapeJsAttr(s.season)}')" title="Broadcast Season: ${escapeAttr(s.display)} (Click to filter)">
+              <i class="fa-regular fa-calendar-days"></i> ${escapeHtml(s.display)}
+            </span>
+          `).join('')}
+        </div>
+      `;
+    }
+
     const card = document.createElement('div');
     card.className = `anime-card ${isSelected ? 'selected' : ''}`;
     card.setAttribute('data-anime-title', anime.title);
@@ -3550,6 +4076,7 @@ function renderUnwatchedView() {
       </div>
       <div class="card-content">
         <h4 class="anime-title" title="${escapeAttr(anime.title)}">${escapeHtml(anime.title)}</h4>
+        ${seasonBadgesHtml}
         ${isWatched ? `
           <div class="card-meta" style="margin-bottom: 0.4rem;">
             <span class="text-highlight"><i class="fa-solid fa-folder"></i> In "${escapeHtml(cat.categoryName)}"</span>
@@ -3570,7 +4097,7 @@ function renderUnwatchedView() {
     `;
 
     card.addEventListener('click', (e) => {
-      if (e.target.closest('button') || e.target.closest('.btn') || e.target.closest('.card-actions') || e.target.closest('.pop-badge')) {
+      if (e.target.closest('button') || e.target.closest('.btn') || e.target.closest('.card-actions') || e.target.closest('.pop-badge') || e.target.closest('.season-badge')) {
         return;
       }
       if (state.isSelectionMode) {
@@ -3752,6 +4279,16 @@ async function loadBrowseUserProfile(userId, targetCat = null) {
       }
     }
 
+    // Admin Delete User button (Irfan Yoichi only, hidden if viewing oneself)
+    const browseDeleteBtn = document.getElementById('browse-btn-delete-user');
+    if (browseDeleteBtn) {
+      if (canEditAnimeImage() && userId !== state.currentUser._id) {
+        browseDeleteBtn.classList.remove('hidden');
+      } else {
+        browseDeleteBtn.classList.add('hidden');
+      }
+    }
+
     // Count total watched
     let totalWatched = 0;
     if (watchlist.categories) {
@@ -3903,7 +4440,7 @@ function renderBrowseWatchlistContent(user, watchlist, totalWatched) {
     sortedCats.forEach((cat, catIdx) => {
       (cat.animes || []).forEach((animeTitle, animeIdx) => {
         const wKey = animeTitle.toLowerCase().trim();
-        const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
+        const watchedAt = watchedDates[wKey] || new Date().toISOString();
         allWatched.push({
           title: animeTitle,
           categoryId: cat._id,
@@ -4178,9 +4715,9 @@ function createBrowseAnimeCard(animeTitle, idx, categoryName = null, watchedAt =
       extraMetaHtml = `<div class="card-meta" style="color: var(--text-muted); font-size: 0.75rem;"><i class="fa-regular fa-circle"></i> Not in your list</div>`;
     }
   } else if (watchedAt && (state.browseAllSort === 'watched-desc' || state.browseAllSort === 'watched-asc')) {
-    const dStr = formatWatchedDate(watchedAt);
+    const dStr = formatWatchedDate(watchedAt, true);
     if (dStr) {
-      extraMetaHtml = `<div class="card-meta" style="color: var(--text-muted); font-size: 0.72rem;"><i class="fa-regular fa-clock"></i> ${dStr}</div>`;
+      extraMetaHtml = `<div class="card-meta" title="Watched: ${escapeAttr(dStr)}" style="color: var(--text-muted); font-size: 0.72rem;"><i class="fa-regular fa-clock"></i> ${escapeHtml(dStr)}</div>`;
     }
   }
 
@@ -5020,7 +5557,7 @@ function getPreloadedWatchers(animeTitle) {
 function renderWatchersContent(animeTitle, watchers, countBadgeEl, listEl) {
   const count = watchers ? watchers.length : 0;
   if (countBadgeEl) {
-    countBadgeEl.innerHTML = `<i class="fa-solid fa-fire text-highlight"></i> ${count} user${count === 1 ? '' : 's'} watching`;
+    countBadgeEl.innerHTML = `<i class="fa-solid fa-fire text-highlight"></i> ${count} user${count === 1 ? '' : 's'} watched`;
   }
 
   if (!listEl) return;
@@ -5183,7 +5720,7 @@ function copyAllDisplayedAnimeNames() {
           (cat.animes || []).forEach(animeTitle => {
             if (!query || animeTitle.toLowerCase().includes(query)) {
               const wKey = animeTitle.toLowerCase().trim();
-              const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
+              const watchedAt = watchedDates[wKey] || new Date().toISOString();
               allWatched.push({ title: animeTitle, watchedAt });
             }
           });
@@ -5268,49 +5805,14 @@ function copyAllDisplayedAnimeNames() {
       }
     }
   } else if (state.currentView === 'unwatched') {
-    viewDesc = 'Not Watched list';
+    const isSeasonActive = (state.unwatchedSeasonFilter?.year !== 'all' || state.unwatchedSeasonFilter?.season !== 'all');
+    viewDesc = isSeasonActive ? `Season (${state.unwatchedSeasonFilter.year} ${state.unwatchedSeasonFilter.season}) anime list` : 'Not Watched list';
     const searchInput = document.getElementById('unwatched-search');
     const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
     const watchedSet = getWatchedTitlesSet();
-    let unwatchedList = [];
-    if (state.unwatchedSearchScope === 'global') {
-      unwatchedList = [...state.allAnimeList];
-    } else {
-      unwatchedList = state.allAnimeList.filter(anime => !watchedSet.has(anime.title.toLowerCase().trim()));
-    }
-    if (query) {
-      unwatchedList = unwatchedList.filter(anime => anime.title.toLowerCase().includes(query));
-    }
     const sortSelect = document.getElementById('unwatched-sort');
-    const sortType = sortSelect ? sortSelect.value : 'popularity-desc';
-    if (sortType === 'alpha-asc') {
-      unwatchedList.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-    } else if (sortType === 'alpha-desc') {
-      unwatchedList.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }));
-    } else if (sortType === 'favorite') {
-      unwatchedList.sort((a, b) => {
-        const keyA = a.title.toLowerCase().trim();
-        const keyB = b.title.toLowerCase().trim();
-        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
-        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
-        const rankSumA = state.globalRankStats[a.title] ?? state.globalRankStats[keyA] ?? 0;
-        const rankSumB = state.globalRankStats[b.title] ?? state.globalRankStats[keyB] ?? 0;
-        const avgA = popA > 0 ? (rankSumA / popA) : Infinity;
-        const avgB = popB > 0 ? (rankSumB / popB) : Infinity;
-        if (avgA !== avgB) return avgA - avgB;
-        if (popB !== popA) return popB - popA;
-        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
-      });
-    } else if (sortType === 'popularity-desc') {
-      unwatchedList.sort((a, b) => {
-        const keyA = a.title.toLowerCase().trim();
-        const keyB = b.title.toLowerCase().trim();
-        const popA = state.globalStats[a.title] ?? state.globalStats[keyA] ?? 0;
-        const popB = state.globalStats[b.title] ?? state.globalStats[keyB] ?? 0;
-        if (popB !== popA) return popB - popA;
-        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
-      });
-    }
+    const sortType = sortSelect ? sortSelect.value : (isSeasonActive ? 'season' : 'popularity-desc');
+    const unwatchedList = getFilteredUnwatchedAnimeList(watchedSet, query, sortType);
     titles = unwatchedList.map(a => a.title);
   } else if (state.currentView === 'browse') {
     const user = state.communityUsers?.find(u => u._id === state.browseSelectedUserId);
@@ -5325,7 +5827,7 @@ function copyAllDisplayedAnimeNames() {
       sortedCats.forEach(cat => {
         (cat.animes || []).forEach(animeTitle => {
           const wKey = animeTitle.toLowerCase().trim();
-          const watchedAt = watchedDates[wKey] || '2026-09-05T12:00:00.000Z';
+          const watchedAt = watchedDates[wKey] || new Date().toISOString();
           allWatched.push({ title: animeTitle, watchedAt });
         });
       });
@@ -5582,10 +6084,15 @@ function renderBrowseUsersModalList(filterText = '') {
             </div>
           </div>
         </div>
-        <div class="browse-modal-user-action">
+        <div class="browse-modal-user-action" style="display: flex; align-items: center; gap: 0.4rem;">
           <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}">
             ${isSelected ? '<i class="fa-solid fa-check"></i> Selected' : '<i class="fa-solid fa-arrow-right"></i> View'}
           </button>
+          ${canEditAnimeImage() && !isMe ? `
+            <button type="button" class="btn btn-sm btn-danger btn-icon" title="Permanently delete user" onclick="event.stopPropagation(); closeBrowseUserSelectModal(); openDeleteUserConfirm('${user._id}', '${escapeJsAttr(user.username)}')">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          ` : ''}
         </div>
       </div>
     `;
@@ -6225,8 +6732,8 @@ function handleImportTextChange() {
               <div class="preview-watchtime-date">
                 <i class="fa-regular fa-clock"></i>
                 <span>${escapeHtml(item.rawDate || 'No date specified')}</span>
-                ${item.parsedDate ? `<small style="opacity:0.65;">(${item.parsedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })})</small>` : ''}
-                ${item.existingDate ? `<span style="margin-left: 0.45rem; font-size: 0.69rem; color: #fcd34d; display: inline-flex; align-items: center; gap: 0.25rem;"><i class="fa-solid fa-arrows-rotate"></i> Overwrites previous date</span>` : ''}
+                ${item.parsedDate ? `<small style="opacity:0.75;">(${escapeHtml(formatWatchedDate(item.parsedDate, true))})</small>` : ''}
+                ${item.existingDate ? `<span style="margin-left: 0.45rem; font-size: 0.69rem; color: #fcd34d; display: inline-flex; align-items: center; gap: 0.25rem;"><i class="fa-solid fa-arrows-rotate"></i> Overwrites: ${escapeHtml(formatWatchedDate(item.existingDate, true))}</span>` : ''}
               </div>
             </div>
             <div class="preview-watchtime-badge ${item.isError ? 'badge-error' : 'badge-valid'}">

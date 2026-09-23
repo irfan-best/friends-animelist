@@ -1,0 +1,14 @@
+// Get innerHTML of the first child of each .episode-title element and join with newlines
+const textToCopy = Array.from(document.querySelectorAll('.episode-title'))
+  .map(el => el.firstElementChild?.innerHTML)
+  .filter(Boolean)
+  .join('\n');
+
+// Copy the multiline text to the clipboard
+if (textToCopy) {
+  navigator.clipboard.writeText(textToCopy)
+    .then(() => console.log('All first children innerHTML copied to clipboard!'))
+    .catch(err => console.error('Failed to copy: ', err));
+} else {
+  console.warn('No matching elements or first children found.');
+}

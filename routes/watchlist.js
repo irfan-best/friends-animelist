@@ -369,7 +369,8 @@ router.post('/common', async (req, res) => {
 router.get('/all-community-data', async (req, res) => {
   try {
     const users = await User.find({}, '_id username createdAt').lean();
-    const watchlists = await Watchlist.find({}).lean();
+    const userIds = users.map(u => u._id);
+    const watchlists = await Watchlist.find({ userId: { $in: userIds } }).lean();
 
     const countMap = new Map();
     const catMap = new Map();
@@ -389,7 +390,8 @@ router.get('/all-community-data', async (req, res) => {
     for (const wl of watchlists) {
       if (!wl.userId) continue;
       const uid = wl.userId.toString();
-      const username = userUsernameMap.get(uid) || 'User';
+      if (!userUsernameMap.has(uid)) continue;
+      const username = userUsernameMap.get(uid);
 
       // Sort categories according to their defined order
       if (Array.isArray(wl.categories)) {
@@ -440,7 +442,8 @@ router.get('/all-community-data', async (req, res) => {
                   userId: uid,
                   username,
                   rank: currentRank,
-                  totalWatched: 0
+                  totalWatched: 0,
+                  watchedAt: datesMap[key] || null
                 });
               }
             }
@@ -682,9 +685,13 @@ router.post('/add-anime', authenticateToken, async (req, res) => {
     const title = animeTitle.trim();
     const watchlist = await getOrCreateWatchlist(userId);
 
-    // Strict Rule: Remove the anime from ALL categories first so it exists in at most ONE category
+    // Check if anime was already in watchlist categories before removing
+    let wasAlreadyInWatchlist = false;
     for (const cat of watchlist.categories) {
-      cat.animes = cat.animes.filter(a => a.toLowerCase() !== title.toLowerCase());
+      if (cat.animes.some(a => a.toLowerCase().trim() === title.toLowerCase().trim())) {
+        wasAlreadyInWatchlist = true;
+      }
+      cat.animes = cat.animes.filter(a => a.toLowerCase().trim() !== title.toLowerCase().trim());
     }
 
     // Find target category
@@ -705,8 +712,14 @@ router.post('/add-anime', authenticateToken, async (req, res) => {
     // Track count before addition
     const oldCount = countTotalWatched(watchlist);
 
-    // Record watched date when marked as watched (current timestamp)
-    watchlist.setWatchedDate(title, new Date());
+    // Only set watched timestamp if anime is newly added to watchlist (or has no watched date yet).
+    // Moving an anime between categories preserves its original watched timestamp!
+    const hasExistingWatchedDate = watchlist.hasWatchedDate(title);
+    if (!wasAlreadyInWatchlist && !hasExistingWatchedDate) {
+      const watchedTimestamp = req.body.watchedAt ? new Date(req.body.watchedAt) : new Date();
+      const validDate = (!isNaN(watchedTimestamp.getTime())) ? watchedTimestamp : new Date();
+      watchlist.setWatchedDate(title, validDate);
+    }
 
     // Add anime to target category
     targetCategory.animes.push(title);
@@ -800,19 +813,31 @@ router.post('/batch-add', authenticateToken, async (req, res) => {
 
     const oldCount = countTotalWatched(watchlist);
 
-    // Strict Rule: Remove these animes from all categories first
+    // Strict Rule: Track which animes were already in watchlist categories before removing
+    const alreadyWatchedTitles = new Set();
     for (const cat of watchlist.categories) {
+      for (const a of cat.animes) {
+        if (titlesSet.has(a.toLowerCase().trim())) {
+          alreadyWatchedTitles.add(a.toLowerCase().trim());
+        }
+      }
       cat.animes = cat.animes.filter(a => !titlesSet.has(a.toLowerCase().trim()));
     }
 
-    const batchNow = new Date();
+    const batchTimestamp = req.body.watchedAt ? new Date(req.body.watchedAt) : new Date();
+    const batchNow = (!isNaN(batchTimestamp.getTime())) ? batchTimestamp : new Date();
 
     // Add unique titles to target category and track watched date
     for (const title of normalizedTitles) {
       if (!targetCategory.animes.some(a => a.toLowerCase().trim() === title.toLowerCase())) {
         targetCategory.animes.push(title);
       }
-      watchlist.setWatchedDate(title, batchNow);
+      const lower = title.toLowerCase().trim();
+      const wasAlreadyWatched = alreadyWatchedTitles.has(lower) || watchlist.hasWatchedDate(title);
+      // Only set new watch timestamp if anime was NOT already in the watchlist
+      if (!wasAlreadyWatched) {
+        watchlist.setWatchedDate(title, batchNow);
+      }
     }
 
     await watchlist.save();

@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Watchlist = require('../models/Watchlist');
 const LoginHistory = require('../models/LoginHistory');
+const Notification = require('../models/Notification');
 
 function isLocalhostIp(ip) {
   if (!ip) return true;
@@ -326,6 +327,62 @@ router.get('/admin/login-history', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Error fetching login history:', err);
     res.status(500).json({ error: 'Failed to fetch login history.' });
+  }
+});
+
+// DELETE /api/admin/users/:id -> Permanently delete user and all related data (Authorized: Irfan Yoichi only)
+router.delete('/admin/users/:id', authenticateToken, async (req, res) => {
+  try {
+    const authUsername = (req.user && req.user.username) ? req.user.username.trim().toLowerCase() : '';
+    if (authUsername !== 'irfan yoichi') {
+      return res.status(403).json({ error: "Access denied. Only user 'Irfan Yoichi' can delete users." });
+    }
+
+    const { id } = req.params;
+    const targetUser = await User.findById(id);
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (targetUser.username.trim().toLowerCase() === 'irfan yoichi') {
+      return res.status(400).json({ error: "Cannot delete admin user 'Irfan Yoichi'." });
+    }
+
+    const targetUserId = targetUser._id;
+    const targetUsername = targetUser.username;
+
+    // 1. Delete user's watchlist document
+    await Watchlist.deleteMany({ userId: targetUserId });
+
+    // 2. Delete user's notifications
+    await Notification.deleteMany({ userId: targetUserId });
+
+    // 3. Remove user's likes and read receipts from all other notifications
+    await Notification.updateMany(
+      {},
+      {
+        $pull: {
+          likes: { userId: targetUserId },
+          readBy: targetUserId
+        }
+      }
+    );
+
+    // 4. Delete user's login history
+    await LoginHistory.deleteMany({ userId: targetUserId });
+
+    // 5. Delete user account document
+    await User.findByIdAndDelete(targetUserId);
+
+    res.json({
+      message: `User "${targetUsername}" and all related data deleted successfully.`,
+      deletedUserId: targetUserId,
+      deletedUsername: targetUsername
+    });
+  } catch (err) {
+    console.error('Error deleting user account:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete user account.' });
   }
 });
 

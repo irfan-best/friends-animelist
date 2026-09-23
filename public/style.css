@@ -191,7 +191,7 @@ body {
   position: fixed;
   top: 1.5rem;
   right: 1.5rem;
-  z-index: 9999;
+  z-index: 10100 !important;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1899,6 +1899,12 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
   justify-content: center;
   padding: 1.5rem;
   animation: modalFadeIn 0.2s ease-out;
+}
+
+/* Confirmation and sub-modals always sit above base modals (e.g., admin settings) */
+#modal-delete-user,
+#modal-delete-category {
+  z-index: 10050 !important;
 }
 
 @keyframes modalFadeIn {
@@ -3981,6 +3987,85 @@ body:has(.modal-overlay:not(.hidden)) #floating-selection-bar {
   }
 }
 
+/* ==========================================================================
+   Unwatched View Season Filter & Card Season Badges
+   ========================================================================== */
+.unwatched-season-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
 
+.unwatched-season-filter-wrap .season-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
+.btn-current-season {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.32rem 0.6rem;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
 
+.btn-current-season:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #fff;
+}
+
+.btn-current-season.active {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: var(--primary, #6366f1);
+  color: #a5b4fc;
+}
+
+.card-season-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+
+.season-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  color: #a5b4fc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.season-badge:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: rgba(99, 102, 241, 0.6);
+  color: #e0e7ff;
+}
+
+@media (max-width: 768px) {
+  .unwatched-season-filter-wrap {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}

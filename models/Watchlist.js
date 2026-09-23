@@ -24,7 +24,7 @@ const animeWatchedDateSchema = new mongoose.Schema({
   },
   watchedAt: {
     type: Date,
-    default: () => new Date('2026-09-09T12:00:00.000Z')
+    default: () => new Date()
   }
 }, { _id: false });
 
@@ -76,13 +76,16 @@ watchlistSchema.methods.setWatchedDate = function(title, date = new Date()) {
   const clean = (title || '').trim();
   if (!clean) return;
   const lower = clean.toLowerCase();
+  const dateObj = (date instanceof Date && !isNaN(date.getTime())) ? date : (date ? new Date(date) : new Date());
+  const finalDate = (!isNaN(dateObj.getTime())) ? dateObj : new Date();
+
   const existing = this.animeWatchedDates.find(
     item => item && item.animeTitle && item.animeTitle.trim().toLowerCase() === lower
   );
   if (existing) {
-    existing.watchedAt = date;
+    existing.watchedAt = finalDate;
   } else {
-    this.animeWatchedDates.push({ animeTitle: clean, watchedAt: date });
+    this.animeWatchedDates.push({ animeTitle: clean, watchedAt: finalDate });
   }
   this.markModified('animeWatchedDates');
 };
@@ -103,6 +106,15 @@ watchlistSchema.methods.hasWatchedDate = function(title) {
   return this.animeWatchedDates.some(
     item => item && item.animeTitle && item.animeTitle.trim().toLowerCase() === lower
   );
+};
+
+watchlistSchema.methods.getWatchedDate = function(title) {
+  if (!Array.isArray(this.animeWatchedDates)) return null;
+  const lower = (title || '').trim().toLowerCase();
+  const item = this.animeWatchedDates.find(
+    i => i && i.animeTitle && i.animeTitle.trim().toLowerCase() === lower
+  );
+  return item ? item.watchedAt : null;
 };
 
 module.exports = mongoose.model('Watchlist', watchlistSchema);

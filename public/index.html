@@ -274,9 +274,25 @@
             </div>
           </div>
 
-          <div class="controls-group">
+          <div class="controls-group unwatched-controls-group">
+            <div class="date-filter-wrap unwatched-season-filter-wrap" id="unwatched-season-filter-wrap">
+              <label for="unwatched-season-year" class="season-filter-label" title="Filter by Broadcast Season"><i class="fa-regular fa-calendar-days"></i> Season:</label>
+              <select id="unwatched-season-year" class="select-dropdown select-dropdown-sm" onchange="handleUnwatchedSeasonChange()" title="Filter by Year">
+                <option value="all">All Years</option>
+              </select>
+              <select id="unwatched-season-period" class="select-dropdown select-dropdown-sm" onchange="handleUnwatchedSeasonChange()" title="Filter by Season">
+                <option value="all">All Seasons</option>
+                <option value="winter">Winter</option>
+                <option value="spring">Spring</option>
+                <option value="summer">Summer</option>
+                <option value="fall">Fall / Autumn</option>
+              </select>
+              <button id="btn-current-season" class="btn-current-season" onclick="applyCurrentSeasonFilter()" title="Set to Current Season"><i class="fa-solid fa-calendar-check"></i> Current</button>
+              <button id="btn-clear-season-filter" class="clear-btn hidden" onclick="clearUnwatchedSeasonFilter()" title="Clear Season Filter"><i class="fa-solid fa-xmark"></i></button>
+            </div>
             <div class="sorting-box">
               <select id="unwatched-sort" class="select-dropdown" onchange="handleUnwatchedSortChange()" title="Sort Not Watched">
+                <option value="season" id="opt-unwatched-sort-season" hidden>Season Order (Default)</option>
                 <option value="popularity-desc" selected>Popularity</option>
                 <option value="favorite">Favorite (Avg Rank)</option>
                 <option value="alpha-asc">ASC (A-Z)</option>
@@ -327,6 +343,9 @@
             </button>
             <button id="btn-copy-displayed-browse" class="btn btn-sm btn-outline btn-copy-all-list" onclick="copyAllDisplayedAnimeNames()" title="Copy all displayed anime names in UI order (l)">
               <i class="fa-regular fa-copy"></i> <span>Copy List</span>
+            </button>
+            <button id="browse-btn-delete-user" class="btn btn-danger btn-sm hidden" onclick="handleBrowseDeleteCurrentUser()" title="Permanently delete this user (Irfan Yoichi only)">
+              <i class="fa-solid fa-trash-can"></i> <span>Delete User</span>
             </button>
           </div>
         </div>
@@ -831,6 +850,27 @@
     </div>
   </div>
 
+  <!-- MODAL: CONFIRM USER DELETION (IRFAN YOICHI EXCLUSIVE) -->
+  <div id="modal-delete-user" class="modal-overlay hidden" onclick="handleModalBackdropClick(event, 'modal-delete-user')">
+    <div class="modal-card glass-panel" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> Delete User Account</h3>
+        <button class="btn-close" onclick="closeModal('modal-delete-user')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to permanently delete user <strong id="delete-user-username" class="text-danger">username</strong>?</p>
+        <p class="modal-note" style="color: #fda4af; background: rgba(225, 29, 72, 0.12); border-color: rgba(225, 29, 72, 0.35);">
+          <i class="fa-solid fa-triangle-exclamation"></i> <strong>Warning:</strong> This will permanently delete everything related to this user: their account, full watchlist, categories, watch timestamps, milestone notifications, and login history. This action <strong>cannot</strong> be undone.
+        </p>
+        <input type="hidden" id="delete-user-id">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('modal-delete-user')">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-delete-user" onclick="confirmDeleteUser()"><i class="fa-solid fa-trash-can"></i> Delete Everything</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: ANIME WATCHERS POPUP -->
   <div id="modal-watchers" class="modal-overlay hidden" onclick="handleModalBackdropClick(event, 'modal-watchers')">
     <div class="modal-card glass-panel" onclick="event.stopPropagation()">
@@ -1217,6 +1257,7 @@
   </button>
 
   <!-- Application Scripts -->
-  <script src="app.js?v=6.3"></script>
+  <script src="seasons.js"></script>
+  <script src="app.js?v=7.2"></script>
 </body>
 </html>

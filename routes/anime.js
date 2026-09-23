@@ -3,6 +3,7 @@ const router = express.Router();
 const { scanAnimeImages, renameAnimeImageFile } = require('../utils/imageScanner');
 const { authenticateToken } = require('../middleware/auth');
 const Watchlist = require('../models/Watchlist');
+const User = require('../models/User');
 
 // GET /api/animes -> Scans ./Images directory, returns list of all anime names & image URLs
 router.get('/', (req, res) => {
@@ -18,7 +19,9 @@ router.get('/', (req, res) => {
 // GET /api/animes/global-stats -> Returns global watch counts and total rank sums across all users
 router.get('/global-stats', async (req, res) => {
   try {
-    const watchlists = await Watchlist.find({}).lean();
+    const users = await User.find({}, '_id').lean();
+    const userIds = users.map(u => u._id);
+    const watchlists = await Watchlist.find({ userId: { $in: userIds } }).lean();
 
     const statsMap = {}; // title -> count
     const rankMap = {}; // title -> rankSum
@@ -100,7 +103,7 @@ router.get('/watchers', async (req, res) => {
     const seenUsers = new Set();
 
     for (const wl of watchlists) {
-      if (!wl.userId) continue;
+      if (!wl.userId || !wl.userId.username) continue;
       const uid = wl.userId._id.toString();
       if (!seenUsers.has(uid)) {
         seenUsers.add(uid);
@@ -124,11 +127,20 @@ router.get('/watchers', async (req, res) => {
 
         const totalWatched = runningRank;
 
+        let userWatchedAt = null;
+        if (Array.isArray(wl.animeWatchedDates)) {
+          const foundDate = wl.animeWatchedDates.find(
+            d => d && d.animeTitle && d.animeTitle.toLowerCase().trim() === cleanTitle.toLowerCase()
+          );
+          if (foundDate) userWatchedAt = foundDate.watchedAt;
+        }
+
         watchers.push({
           userId: wl.userId._id,
           username: wl.userId.username,
           rank: rank !== null ? rank : (totalWatched || 1),
-          totalWatched
+          totalWatched,
+          watchedAt: userWatchedAt
         });
       }
     }
