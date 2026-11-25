@@ -2259,7 +2259,7 @@ function createWatchlistAnimeCard(title, meta, categoryId, index, totalInCat, ca
   if (watchedAt) {
     const dStr = formatWatchedDate(watchedAt, true);
     if (dStr) {
-      extraMetaHtml = `<div class="card-meta" title="Watched: ${escapeAttr(dStr)}" style="color: var(--text-muted); font-size: 0.72rem; margin-top: 2px;"><i class="fa-regular fa-clock"></i> ${escapeHtml(dStr)}</div>`;
+      extraMetaHtml = `<div class="card-meta card-watched-date" title="Watched: ${escapeAttr(dStr)}"><i class="fa-regular fa-clock"></i> <span>${escapeHtml(dStr)}</span></div>`;
     }
   }
 
@@ -4717,7 +4717,7 @@ function createBrowseAnimeCard(animeTitle, idx, categoryName = null, watchedAt =
   } else if (watchedAt && (state.browseAllSort === 'watched-desc' || state.browseAllSort === 'watched-asc')) {
     const dStr = formatWatchedDate(watchedAt, true);
     if (dStr) {
-      extraMetaHtml = `<div class="card-meta" title="Watched: ${escapeAttr(dStr)}" style="color: var(--text-muted); font-size: 0.72rem;"><i class="fa-regular fa-clock"></i> ${escapeHtml(dStr)}</div>`;
+      extraMetaHtml = `<div class="card-meta card-watched-date" title="Watched: ${escapeAttr(dStr)}"><i class="fa-regular fa-clock"></i> <span>${escapeHtml(dStr)}</span></div>`;
     }
   }
 
@@ -5025,8 +5025,8 @@ function renderCompareResults() {
         <h4 class="anime-title" title="${escapeAttr(item.title)}">${escapeHtml(item.title)}</h4>
         ${isSourceCurrentUser ? `
           <div class="card-actions">
-            <button class="btn btn-accent btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
-              <i class="fa-solid fa-plus"></i> Add to My Watchlist
+            <button class="btn btn-compare-add btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')" title="Add to Watchlist">
+              <i class="fa-solid fa-plus"></i> <span class="btn-text-full">Add to Watchlist</span><span class="btn-text-compact">Add</span>
             </button>
           </div>
         ` : ''}
@@ -5388,14 +5388,14 @@ function renderCommonResults() {
         </div>
         ${!isWatchedByMe ? `
           <div class="card-actions">
-            <button class="btn btn-accent btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
-              <i class="fa-solid fa-plus"></i> Add to My Watchlist
+            <button class="btn btn-compare-add btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')" title="Add to Watchlist">
+              <i class="fa-solid fa-plus"></i> <span class="btn-text-full">Add to Watchlist</span><span class="btn-text-compact">Add</span>
             </button>
           </div>
         ` : `
           <div class="card-actions">
-            <button class="btn btn-outline btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')">
-              <i class="fa-solid fa-circle-check"></i> In Watchlist
+            <button class="btn btn-compare-in-list btn-block" onclick="event.stopPropagation(); openMoveAnimeModal('${escapeJsAttr(item.title)}')" title="In Watchlist">
+              <i class="fa-solid fa-circle-check"></i> <span class="btn-text-full">In Watchlist</span><span class="btn-text-compact">Added</span>
             </button>
           </div>
         `}
@@ -6157,31 +6157,149 @@ function renderReorderCategoriesList() {
     const animeCount = cat.animes ? cat.animes.length : 0;
 
     return `
-      <div class="reorder-category-item" data-cat-id="${escapeAttr(cat._id)}">
-        <div class="reorder-category-left">
-          <span class="reorder-cat-pos">#${idx + 1}</span>
-          <div class="reorder-cat-info">
-            <span class="reorder-cat-name">${escapeHtml(cat.categoryName)}</span>
-            <span class="reorder-cat-count">${animeCount} anime</span>
+      <div class="reorder-category-item" data-cat-id="${escapeAttr(cat._id)}" draggable="true">
+        <div class="reorder-cat-header-row">
+          <div class="reorder-cat-title-wrap">
+            <span class="reorder-drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></span>
+            <span class="reorder-cat-pos">#${idx + 1}</span>
+            <span class="reorder-cat-name" title="${escapeAttr(cat.categoryName)}">${escapeHtml(cat.categoryName)}</span>
+            <span class="reorder-cat-count">(${animeCount})</span>
           </div>
         </div>
         <div class="reorder-category-actions">
-          <button class="btn btn-icon btn-sm btn-outline reorder-up-btn" onclick="handleReorderCategoryClick('${cat._id}', -1)" title="Move Up" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
-            <i class="fa-solid fa-arrow-up"></i>
+          <button type="button" class="btn btn-sm btn-outline reorder-up-btn" onclick="handleReorderCategoryClick('${cat._id}', -1)" title="Move Up" ${isFirst ? 'disabled style="opacity:0.3"' : ''}>
+            <i class="fa-solid fa-arrow-up"></i> <span>Up</span>
           </button>
-          <button class="btn btn-icon btn-sm btn-outline reorder-down-btn" onclick="handleReorderCategoryClick('${cat._id}', 1)" title="Move Down" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
-            <i class="fa-solid fa-arrow-down"></i>
+          <button type="button" class="btn btn-sm btn-outline reorder-down-btn" onclick="handleReorderCategoryClick('${cat._id}', 1)" title="Move Down" ${isLast ? 'disabled style="opacity:0.3"' : ''}>
+            <i class="fa-solid fa-arrow-down"></i> <span>Down</span>
           </button>
-          <button class="btn btn-icon btn-sm btn-outline" onclick="closeModal('modal-reorder-categories'); openEditCategoryModal('${cat._id}', '${escapeJsAttr(cat.categoryName)}')" title="Rename Category">
-            <i class="fa-solid fa-pen-to-square"></i>
+          <button type="button" class="btn btn-sm btn-outline" onclick="closeModal('modal-reorder-categories'); openEditCategoryModal('${cat._id}', '${escapeJsAttr(cat.categoryName)}')" title="Rename Category">
+            <i class="fa-solid fa-pen-to-square"></i> <span>Rename</span>
           </button>
-          <button class="btn btn-icon btn-sm btn-danger" onclick="closeModal('modal-reorder-categories'); openDeleteCategoryModal('${cat._id}', '${escapeJsAttr(cat.categoryName)}')" title="Delete Category">
-            <i class="fa-solid fa-trash-can"></i>
+          <button type="button" class="btn btn-sm btn-danger" onclick="closeModal('modal-reorder-categories'); openDeleteCategoryModal('${cat._id}', '${escapeJsAttr(cat.categoryName)}')" title="Delete Category">
+            <i class="fa-solid fa-trash-can"></i> <span>Delete</span>
           </button>
         </div>
       </div>
     `;
   }).join('');
+
+  initReorderCategoriesDragAndDrop();
+}
+
+function initReorderCategoriesDragAndDrop() {
+  const listEl = document.getElementById('reorder-categories-modal-list');
+  if (!listEl) return;
+
+  const items = listEl.querySelectorAll('.reorder-category-item');
+  let touchSourceId = null;
+  let touchCurrentOverId = null;
+  let touchStartY = 0;
+  let isTouchDragging = false;
+
+  items.forEach(item => {
+    const catId = item.getAttribute('data-cat-id');
+
+    // --- HTML5 Pointer / Mouse Drag & Drop ---
+    item.addEventListener('dragstart', (e) => {
+      item.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', catId);
+      e.dataTransfer.effectAllowed = 'move';
+      listEl._draggedCatId = catId;
+    });
+
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      listEl.querySelectorAll('.reorder-category-item').forEach(el => el.classList.remove('drag-over'));
+      delete listEl._draggedCatId;
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const draggedId = listEl._draggedCatId;
+      if (draggedId && draggedId !== catId) {
+        item.classList.add('drag-over');
+      }
+    });
+
+    item.addEventListener('dragleave', (e) => {
+      if (!item.contains(e.relatedTarget)) {
+        item.classList.remove('drag-over');
+      }
+    });
+
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      const sourceId = listEl._draggedCatId || e.dataTransfer.getData('text/plain');
+      if (sourceId && sourceId !== catId) {
+        await reorderCategoriesByDrag(sourceId, catId);
+        renderReorderCategoriesList();
+      }
+    });
+
+    // --- Touch Drag & Drop for Mobile Screens ---
+    const handle = item.querySelector('.reorder-drag-handle') || item;
+
+    handle.addEventListener('touchstart', (e) => {
+      if (e.target.closest('button')) return;
+      touchSourceId = catId;
+      touchStartY = e.touches[0].clientY;
+      isTouchDragging = false;
+      touchCurrentOverId = null;
+    }, { passive: true });
+
+    handle.addEventListener('touchmove', (e) => {
+      if (!touchSourceId) return;
+      const touchY = e.touches[0].clientY;
+      const diffY = Math.abs(touchY - touchStartY);
+
+      if (diffY > 6) {
+        isTouchDragging = true;
+        item.classList.add('dragging');
+        if (e.cancelable) e.preventDefault();
+
+        const touch = e.touches[0];
+        const elemUnder = document.elementFromPoint(touch.clientX, touch.clientY);
+        const targetItem = elemUnder?.closest('.reorder-category-item');
+
+        items.forEach(el => el.classList.remove('drag-over'));
+        if (targetItem && targetItem !== item) {
+          targetItem.classList.add('drag-over');
+          touchCurrentOverId = targetItem.getAttribute('data-cat-id');
+        } else {
+          touchCurrentOverId = null;
+        }
+      }
+    }, { passive: false });
+
+    handle.addEventListener('touchend', async () => {
+      item.classList.remove('dragging');
+      items.forEach(el => el.classList.remove('drag-over'));
+
+      if (isTouchDragging && touchSourceId && touchCurrentOverId && touchSourceId !== touchCurrentOverId) {
+        const fromId = touchSourceId;
+        const toId = touchCurrentOverId;
+        touchSourceId = null;
+        touchCurrentOverId = null;
+        isTouchDragging = false;
+        await reorderCategoriesByDrag(fromId, toId);
+        renderReorderCategoriesList();
+      } else {
+        touchSourceId = null;
+        touchCurrentOverId = null;
+        isTouchDragging = false;
+      }
+    });
+
+    handle.addEventListener('touchcancel', () => {
+      item.classList.remove('dragging');
+      items.forEach(el => el.classList.remove('drag-over'));
+      touchSourceId = null;
+      touchCurrentOverId = null;
+      isTouchDragging = false;
+    });
+  });
 }
 
 async function handleReorderCategoryClick(categoryId, direction) {
@@ -7710,7 +7828,7 @@ function renderLeaderboardList(usersList) {
     const pct = Math.round(((user.totalWatched || 0) / maxWatched) * 100);
 
     return `
-      <div class="leaderboard-row ${isMe ? 'is-current-user' : ''}">
+      <div class="leaderboard-row ${isMe ? 'is-current-user' : ''}" onclick="inspectUserWatchlist('${user._id}')" title="Inspect ${escapeAttr(user.username)}'s watchlist" style="cursor: pointer;">
         <div class="lb-col lb-col-rank">
           <div class="lb-rank-badge ${rankBadgeClass}">
             ${rankIcon ? rankIcon : ''}${actualRank}
@@ -7723,7 +7841,7 @@ function renderLeaderboardList(usersList) {
           </span>
         </div>
         <div class="lb-col lb-col-stats lb-stats-cell">
-          <span class="lb-stats-value">${user.totalWatched || 0} anime</span>
+          <span class="lb-stats-value">${user.totalWatched || 0}</span>
           <div class="lb-bar-bg">
             <div class="lb-bar-fill" style="width: ${pct}%;"></div>
           </div>
@@ -7731,7 +7849,7 @@ function renderLeaderboardList(usersList) {
         <div class="lb-col lb-col-cats lb-cats-cell">
           ${user.totalCategories || 0} categories
         </div>
-        <div class="lb-col lb-col-action lb-action-cell">
+        <div class="lb-col lb-col-action lb-action-cell" onclick="event.stopPropagation()">
           <button class="btn btn-sm btn-outline btn-block" onclick="inspectUserWatchlist('${user._id}')" title="Inspect ${escapeAttr(user.username)}'s watchlist">
             <i class="fa-solid fa-compass"></i> View Watchlist
           </button>
