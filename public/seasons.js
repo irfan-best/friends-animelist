@@ -89,9 +89,74 @@ Star Wars Visions
 Blades of the Guardians
 Above Myriads
 
-2026, Autumn:
+2026, Fall:
+Black Clover
+Blue Box
+Tougen Anki
+Tokyo Revengers
+Chitose Is in the Ramune Bottle
+The Cold Sato-san is Only Sweet to Me
+The Iceblade Sorcerer Shall Rule the World
+The Exiled Heavy Knight Knows How to Game the System
+The Detective Is Already Dead
+Firefly Wedding
+Super Psychic Policeman Chojo
+The Apothecary Diaries
 The Ramparts of Ice
+As a Reincarnated Aristocrat, I'll Use My Appraisal Skill to Rise in the World
+Ao Ashi
+Mission Yozakura Family
+Ranma
+I'm Dating a Dark Summoner
+Magical Explorer
+My Girlfriend's Friend
+Ghost Meets Gal
+PSYREN
+Reborn as a Space Mercenary I Woke Up Piloting the Strongest Starship
+Romelia War Chronicle
 Eren the Southpaw
+Hotel Inhumans
+Ace of Diamond
+A Wild Last Boss Appeared!
+Please Excuse My Younger Brothers
+A Returner's Magic Should Be Special
+The Prince of Tennis
+Reincarnated as a Sword
+Sasaki and Peeps
+Red River
+Bleach
+Link Click
+Cyberpunk Edgerunners
+A Certain Dark Item
+A Tale of the Secret Saint
+Battle Spirits [Re] Zekkai no Ku
+Dandivine
+Dark Machine The Animation
+Devils' Crest
+Even Though I'm a Super Timid Noble Girl, I Accepted the Bet From My Cunning Fiance
+From Far Away
+Full Clearing Another World under a Goddess with Zero Believers
+FX Fighter Kurumi-chan
+Hello, I am a Witch and my Crush Wants me to Make a Love Potion
+Horror Collector
+I'm Looking For a Zombie
+Magic Knight Rayearth
+Magic Repo Man Dumped by My Party, I'll Cash In With a Cute Support Fairy to Become the Strongest
+Nia Liston The Merciless Maiden
+Overgeared
+Paws & Palaces
+So What's Wrong with Getting Reborn as a Goblin
+Suikoden
+Tank Chair
+Tetsuryou! Meet with Tetsudou Musume
+The Laid-Off Cheat-Granting Mage Enjoys a Second Lease on Life
+The Seven Knights of the Marronnier Kingdom
+The Vermilion Mask
+The World's Strongest Witch
+Uncle's Obsession with Cute Things
+Vertex Force
+Welsh & Shedar
+With Vengeance, Sincerely, Your Broken Saintess
 
 
 
