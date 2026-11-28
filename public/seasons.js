@@ -95,6 +95,7 @@ Blue Box
 Tougen Anki
 Tokyo Revengers
 Chitose Is in the Ramune Bottle
+Magical Explorer
 The Cold Sato-san is Only Sweet to Me
 The Iceblade Sorcerer Shall Rule the World
 The Exiled Heavy Knight Knows How to Game the System
@@ -103,12 +104,12 @@ Firefly Wedding
 Super Psychic Policeman Chojo
 The Apothecary Diaries
 The Ramparts of Ice
+So What's Wrong with Getting Reborn as a Goblin
 As a Reincarnated Aristocrat, I'll Use My Appraisal Skill to Rise in the World
 Ao Ashi
 Mission Yozakura Family
 Ranma
 I'm Dating a Dark Summoner
-Magical Explorer
 My Girlfriend's Friend
 Ghost Meets Gal
 PSYREN
@@ -145,7 +146,6 @@ Magic Repo Man Dumped by My Party, I'll Cash In With a Cute Support Fairy to Bec
 Nia Liston The Merciless Maiden
 Overgeared
 Paws & Palaces
-So What's Wrong with Getting Reborn as a Goblin
 Suikoden
 Tank Chair
 Tetsuryou! Meet with Tetsudou Musume
